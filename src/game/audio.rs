@@ -1,8 +1,9 @@
 //! 音效系统
 //!
 //! 按照 specification.md 中的音效规格实现
+//! 音效文件存放在 src/assets/sounds/ 目录下，使用 include_bytes! 嵌入程序
 
-use rodio::{source::Source, OutputStream, OutputStreamHandle};
+use rodio::{source::Source, Decoder, OutputStream, OutputStreamHandle};
 use std::collections::HashMap;
 use std::io::Cursor;
 
@@ -24,6 +25,15 @@ pub enum SoundType {
     /// 平局 - 中性音效
     Draw,
 }
+
+/// 音效资源文件路径（相对于 src 目录）
+const CLICK_SOUND: &[u8] = include_bytes!("../assets/sounds/click.wav");
+const PLACE_SOUND: &[u8] = include_bytes!("../assets/sounds/place.wav");
+const INVALID_SOUND: &[u8] = include_bytes!("../assets/sounds/invalid.wav");
+const CAPTURE_SOUND: &[u8] = include_bytes!("../assets/sounds/capture.wav");
+const WIN_SOUND: &[u8] = include_bytes!("../assets/sounds/win.wav");
+const LOSE_SOUND: &[u8] = include_bytes!("../assets/sounds/lose.wav");
+const DRAW_SOUND: &[u8] = include_bytes!("../assets/sounds/draw.wav");
 
 /// 音效管理器
 pub struct AudioManager {
@@ -50,7 +60,7 @@ impl AudioManager {
                 };
                 
                 // 加载内置音效
-                manager.load_builtin_sounds();
+                manager.load_sounds();
                 
                 Some(manager)
             }
@@ -61,41 +71,42 @@ impl AudioManager {
         }
     }
     
-    /// 加载内置音效（使用程序生成的简单音效）
-    fn load_builtin_sounds(&mut self) {
-        // 由于嵌入真实音频文件会增加复杂性，
-        // 这里使用程序生成的简单音效作为占位符
-        // 实际项目中可以使用 include_bytes! 嵌入真实音频文件
+    /// 加载所有音效
+    fn load_sounds(&mut self) {
+        // 尝试加载真实音效文件，如果失败则使用占位符
+        let sound_files = [
+            (SoundType::Click, CLICK_SOUND),
+            (SoundType::Place, PLACE_SOUND),
+            (SoundType::Invalid, INVALID_SOUND),
+            (SoundType::Capture, CAPTURE_SOUND),
+            (SoundType::Win, WIN_SOUND),
+            (SoundType::Lose, LOSE_SOUND),
+            (SoundType::Draw, DRAW_SOUND),
+        ];
         
-        // 生成简单的音效数据（正弦波）
-        for sound_type in [
-            SoundType::Click,
-            SoundType::Place,
-            SoundType::Invalid,
-            SoundType::Capture,
-            SoundType::Win,
-            SoundType::Lose,
-            SoundType::Draw,
-        ] {
-            let data = self.generate_sound_data(sound_type);
-            self.sounds.insert(sound_type, data);
+        for (sound_type, bytes) in sound_files {
+            // 检查文件是否有实际内容（至少包含有效的WAV头）
+            if bytes.len() > 44 {
+                self.sounds.insert(sound_type, bytes.to_vec());
+            } else {
+                // 文件不存在或为空，使用占位符音效
+                let placeholder = Self::generate_placeholder_sound(sound_type);
+                self.sounds.insert(sound_type, placeholder);
+            }
         }
     }
     
-    /// 生成简单的音效数据
-    fn generate_sound_data(&self, sound_type: SoundType) -> Vec<u8> {
-        // 这里生成简单的 WAV 格式音频数据
-        // 实际项目中应该加载真实的音频文件
-        
+    /// 生成占位符音效（当真实文件不存在时使用）
+    fn generate_placeholder_sound(sound_type: SoundType) -> Vec<u8> {
         let sample_rate = 44100u32;
         let (frequency, duration_ms, volume) = match sound_type {
-            SoundType::Click => (800.0, 100, 0.5),      // 高频短促
-            SoundType::Place => (400.0, 200, 0.6),      // 中频中等
-            SoundType::Invalid => (200.0, 300, 0.4),    // 低频较长
-            SoundType::Capture => (600.0, 400, 0.7),    // 中高频，有层次感
-            SoundType::Win => (523.25, 800, 0.8),       // C5音，欢快
-            SoundType::Lose => (220.0, 600, 0.5),       // A3音，低沉
-            SoundType::Draw => (349.23, 500, 0.5),      // F4音，中性
+            SoundType::Click => (800.0, 100, 0.5),
+            SoundType::Place => (400.0, 200, 0.6),
+            SoundType::Invalid => (200.0, 300, 0.4),
+            SoundType::Capture => (600.0, 400, 0.7),
+            SoundType::Win => (523.25, 800, 0.8),
+            SoundType::Lose => (220.0, 600, 0.5),
+            SoundType::Draw => (349.23, 500, 0.5),
         };
         
         let num_samples = (sample_rate as f32 * duration_ms as f32 / 1000.0) as usize;
@@ -103,13 +114,12 @@ impl AudioManager {
         
         for i in 0..num_samples {
             let t = i as f32 / sample_rate as f32;
-            // 添加包络使声音更自然
             let envelope = if t < 0.1 {
-                t / 0.1 // 攻击阶段
+                t / 0.1
             } else if t > 0.7 {
-                (1.0 - t) / 0.3 // 释放阶段
+                (1.0 - t) / 0.3
             } else {
-                1.0 // 保持阶段
+                1.0
             };
             
             let sample = (t * frequency * 2.0 * std::f32::consts::PI).sin();
@@ -117,37 +127,33 @@ impl AudioManager {
             samples.push((sample * amplitude as f32) as i16);
         }
         
-        // 转换为 WAV 格式
-        self.samples_to_wav(&samples, sample_rate)
+        Self::samples_to_wav(&samples, sample_rate)
     }
     
     /// 将样本转换为 WAV 格式
-    fn samples_to_wav(&self, samples: &[i16], sample_rate: u32) -> Vec<u8> {
+    fn samples_to_wav(samples: &[i16], sample_rate: u32) -> Vec<u8> {
         let num_channels = 1u16;
         let bits_per_sample = 16u16;
         let byte_rate = sample_rate * num_channels as u32 * (bits_per_sample as u32 / 8);
-        let block_align = num_channels * (bits_per_sample / 8);
+        let block_align = num_channels * (bits_per_sample / 2);
         let data_size = samples.len() as u32 * 2;
         let file_size = 36 + data_size;
         
         let mut wav_data = Vec::with_capacity(file_size as usize);
         
-        // RIFF 头
         wav_data.extend_from_slice(b"RIFF");
         wav_data.extend_from_slice(&file_size.to_le_bytes());
         wav_data.extend_from_slice(b"WAVE");
         
-        // fmt 块
         wav_data.extend_from_slice(b"fmt ");
-        wav_data.extend_from_slice(&16u32.to_le_bytes()); // 块大小
-        wav_data.extend_from_slice(&1u16.to_le_bytes()); // 音频格式（PCM）
+        wav_data.extend_from_slice(&16u32.to_le_bytes());
+        wav_data.extend_from_slice(&1u16.to_le_bytes());
         wav_data.extend_from_slice(&num_channels.to_le_bytes());
         wav_data.extend_from_slice(&sample_rate.to_le_bytes());
         wav_data.extend_from_slice(&byte_rate.to_le_bytes());
         wav_data.extend_from_slice(&block_align.to_le_bytes());
         wav_data.extend_from_slice(&bits_per_sample.to_le_bytes());
         
-        // data 块
         wav_data.extend_from_slice(b"data");
         wav_data.extend_from_slice(&data_size.to_le_bytes());
         for sample in samples {
@@ -165,7 +171,7 @@ impl AudioManager {
         
         if let Some(data) = self.sounds.get(&sound_type) {
             let cursor = Cursor::new(data.clone());
-            if let Ok(source) = rodio::Decoder::new(cursor) {
+            if let Ok(source) = Decoder::new(cursor) {
                 let _ = self.stream_handle.play_raw(source.convert_samples());
             }
         }

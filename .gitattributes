@@ -5,3 +5,6 @@
 *.toml text eol=lf
 *.yml text eol=lf
 Cargo.lock text eol=lf
+
+*.wav binary
+*.wav -diff -merge -text
