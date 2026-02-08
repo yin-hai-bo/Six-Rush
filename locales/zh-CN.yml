@@ -4,18 +4,18 @@ app:
   title: "六子冲"
   
 menu:
-  game: "游戏(G)"
-  new_game: "开始新局(N)..."
-  load_game: "加载游戏存档(L)..."
-  save_game: "保存当前棋局(S)..."
-  undo: "悔棋(U)"
-  language: "语言(L)"
+  game: "游戏"
+  new_game: "开始新局(F2)..."
+  load_game: "加载游戏存档(F3)..."
+  save_game: "保存当前棋局(F4)..."
+  undo: "悔棋(Ctrl+Z)"
+  language: "语言"
   lang_zh: "简体中文"
   lang_en: "English"
-  exit: "退出(X)"
-  help: "帮助(H)"
-  rules: "行棋规则(R)"
-  about: "关于(A)"
+  exit: "退出"
+  help: "帮助"
+  rules: "行棋规则"
+  about: "关于"
 
 game:
   player_win: "您赢了！"

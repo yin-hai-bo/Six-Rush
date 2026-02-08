@@ -4,18 +4,18 @@ app:
   title: "SIX-RUSH"
   
 menu:
-  game: "Game(G)"
-  new_game: "New Game(N)..."
-  load_game: "Load Game(L)..."
-  save_game: "Save Game(S)..."
-  undo: "Undo(U)"
-  language: "Language(L)"
+  game: "Game"
+  new_game: "New Game(F2)..."
+  load_game: "Load Game(F3)..."
+  save_game: "Save Game(F4)..."
+  undo: "Undo(Ctrl+Z)"
+  language: "Language"
   lang_zh: "简体中文"
   lang_en: "English"
-  exit: "Exit(X)"
-  help: "Help(H)"
-  rules: "Rules(R)"
-  about: "About(A)"
+  exit: "Exit"
+  help: "Help"
+  rules: "Rules"
+  about: "About"
 
 game:
   player_win: "You Win!"

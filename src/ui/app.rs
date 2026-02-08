@@ -1,7 +1,7 @@
 //! 主应用
 
 use eframe::CreationContext;
-use egui::{CentralPanel, Context, TopBottomPanel};
+use egui::{CentralPanel, Context, Key, TopBottomPanel};
 use rust_i18n::t;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -182,61 +182,84 @@ impl MainApp {
     fn handle_menu(&mut self, ctx: &Context) {
         // 只有在可操作UI的状态下才显示/处理菜单
         let can_interact = self.game.state.can_interact_with_ui();
+        
+        // 处理全局快捷键（当菜单可操作且没有动画时）
+        if can_interact && !self.has_active_animation() {
+            ctx.input(|i| {
+                // F2: 新局, F3: 加载, F4: 保存, Ctrl+Z: 悔棋
+                if i.key_pressed(Key::F2) {
+                    self.new_game_dialog = NewGameDialog::Open;
+                }
+                if i.key_pressed(Key::F3) {
+                    self.handle_load_game();
+                }
+                if i.key_pressed(Key::F4) {
+                    self.handle_save_game();
+                }
+                if i.modifiers.ctrl && i.key_pressed(Key::Z) {
+                    let _ = self.game.handle_event(GameEvent::StartUndo);
+                }
+            });
+        }
 
         TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
+                // 游戏菜单 (ALT+G)
+                // 游戏菜单 (支持 ALT+G)
                 ui.menu_button(t!("menu.game"), |ui| {
-                    let can_click = can_interact && !self.has_active_animation();
-                    
-                    if ui.add_enabled(can_click, egui::Button::new(t!("menu.new_game"))).clicked() {
-                        self.new_game_dialog = NewGameDialog::Open;
-                        ui.close_menu();
-                    }
-                    if ui.add_enabled(can_click, egui::Button::new(t!("menu.load_game"))).clicked() {
-                        self.handle_load_game();
-                        ui.close_menu();
-                    }
-                    if ui.add_enabled(can_click, egui::Button::new(t!("menu.save_game"))).clicked() {
-                        self.handle_save_game();
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    
-                    // 悔棋按钮
-                    let can_undo = self.game.can_undo() && can_click;
-                    if ui.add_enabled(can_undo, egui::Button::new(t!("menu.undo"))).clicked() {
-                        let _ = self.game.handle_event(GameEvent::StartUndo);
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    
-                    if ui.button(t!("menu.exit")).clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        ui.close_menu();
-                    }
-                });
+                        let can_click = can_interact && !self.has_active_animation();
+                        
+                        if ui.add_enabled(can_click, egui::Button::new(t!("menu.new_game"))).clicked() {
+                            self.new_game_dialog = NewGameDialog::Open;
+                            ui.close_menu();
+                        }
+                        if ui.add_enabled(can_click, egui::Button::new(t!("menu.load_game"))).clicked() {
+                            self.handle_load_game();
+                            ui.close_menu();
+                        }
+                        if ui.add_enabled(can_click, egui::Button::new(t!("menu.save_game"))).clicked() {
+                            self.handle_save_game();
+                            ui.close_menu();
+                        }
+                        ui.separator();
+                        
+                        // 悔棋按钮
+                        let can_undo = self.game.can_undo() && can_click;
+                        if ui.add_enabled(can_undo, egui::Button::new(t!("menu.undo"))).clicked() {
+                            let _ = self.game.handle_event(GameEvent::StartUndo);
+                            ui.close_menu();
+                        }
+                        ui.separator();
+                        
+                        if ui.button(t!("menu.exit")).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            ui.close_menu();
+                        }
+                    });
 
+                // 语言菜单 (支持 ALT+L)
                 ui.menu_button(t!("menu.language"), |ui| {
-                    if ui.button(t!("menu.lang_zh")).clicked() {
-                        self.switch_language("zh-CN");
-                        ui.close_menu();
-                    }
-                    if ui.button(t!("menu.lang_en")).clicked() {
-                        self.switch_language("en");
-                        ui.close_menu();
-                    }
+                        if ui.button(t!("menu.lang_zh")).clicked() {
+                            self.switch_language("zh-CN");
+                            ui.close_menu();
+                        }
+                        if ui.button(t!("menu.lang_en")).clicked() {
+                            self.switch_language("en");
+                            ui.close_menu();
+                        }
                 });
 
+                // 帮助菜单 (支持 ALT+H)
                 ui.menu_button(t!("menu.help"), |ui| {
-                    if ui.button(t!("menu.rules")).clicked() {
-                        self.rules_dialog = RulesDialog::Open;
-                        ui.close_menu();
-                    }
-                    if ui.button(t!("menu.about")).clicked() {
-                        self.about_dialog = AboutDialog::Open;
-                        ui.close_menu();
-                    }
-                });
+                        if ui.button(t!("menu.rules")).clicked() {
+                            self.rules_dialog = RulesDialog::Open;
+                            ui.close_menu();
+                        }
+                        if ui.button(t!("menu.about")).clicked() {
+                            self.about_dialog = AboutDialog::Open;
+                            ui.close_menu();
+                        }
+                    });
             });
         });
     }
