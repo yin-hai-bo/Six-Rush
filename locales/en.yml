@@ -1,0 +1,59 @@
+_version: 2
+
+app:
+  title: "SIX-RUSH"
+  
+menu:
+  game: "Game(G)"
+  new_game: "New Game(N)..."
+  load_game: "Load Game(L)..."
+  save_game: "Save Game(S)..."
+  undo: "Undo(U)"
+  language: "Language(L)"
+  lang_zh: "简体中文"
+  lang_en: "English"
+  exit: "Exit(X)"
+  help: "Help(H)"
+  rules: "Rules(R)"
+  about: "About(A)"
+
+game:
+  player_win: "You Win!"
+  ai_win: "Computer Wins!"
+  draw: "Draw!"
+  black: "Black"
+  white: "White"
+  player_turn: "Your Turn"
+  ai_turn: "Computer Thinking..."
+  select_side: "Select Side"
+  play_first: "Play First (Black)"
+  play_second: "Play Second (White)"
+  undo: "Undo"
+  new_game_btn: "New Game"
+  back_to_menu: "Back to Menu"
+  
+dialog:
+  game_over: "Game Over"
+  confirm_exit: "Exit Game?"
+  confirm_exit_msg: "A game is in progress. Are you sure you want to exit?"
+  confirm_load: "Confirm Load"
+  confirm_load_msg: "Current game is not at initial state. Loading will discard current progress. Continue?"
+  confirm_overwrite: "Confirm Overwrite"
+  confirm_overwrite_msg: "File already exists. Overwrite?"
+  save_disabled: "Save Unavailable"
+  save_disabled_msg: "Current state is initial position, no need to save."
+  file_filter: "Six-Rush Save (*.6zc)"
+  yes: "Yes"
+  no: "No"
+  cancel: "Cancel"
+  ok: "OK"
+  
+rules:
+  title: "Game Rules"
+  board: "1. Board: 4×4 grid with 16 intersection points"
+  pieces: "2. Pieces: Each side has 6 pieces, Black moves first"
+  move: "3. Move: Move one piece to an adjacent empty intersection"
+  capture: "4. Capture: Form 'Own-Own-Enemy' in a line to capture"
+  single: "5. Single Piece: When one side has only 1 piece, 'Dan' capture applies"
+  draw_rule: "6. Draw: When both sides have ≤2 pieces"
+  stalemate: "7. Stalemate: No legal moves means loss"

@@ -1,0 +1,298 @@
+//! 棋盘视图渲染
+
+use egui::{Color32, Pos2, Rect, Response, Rounding, Sense, Stroke, Ui, Vec2};
+
+use crate::game::board::BOARD_SIZE;
+use crate::game::piece::{Piece, Side};
+
+/// 棋盘视图
+#[derive(Clone, Copy)]
+pub struct BoardView {
+    /// 棋盘矩形区域（屏幕坐标）
+    pub rect: Rect,
+    /// 格子大小
+    pub cell_size: f32,
+    /// 棋子半径
+    pub piece_radius: f32,
+    /// 是否翻转棋盘（玩家执白时翻转，使白棋在下方）
+    pub flip: bool,
+}
+
+impl BoardView {
+    /// 创建棋盘视图
+    /// 
+    /// # Arguments
+    /// * `center` - 棋盘中心点
+    /// * `size` - 棋盘大小
+    /// * `flip` - 是否翻转棋盘（玩家执白时为true，使玩家棋子在下方）
+    pub fn new(center: Pos2, size: f32, flip: bool) -> Self {
+        let _half = size / 2.0;
+        let rect = Rect::from_center_size(center, Vec2::new(size, size));
+        let cell_size = size / BOARD_SIZE as f32;
+        let piece_radius = cell_size * 0.35;
+
+        Self {
+            rect,
+            cell_size,
+            piece_radius,
+            flip,
+        }
+    }
+
+    /// 渲染棋盘背景
+    pub fn draw_board(&self, ui: &mut Ui) -> Response {
+        let response = ui.allocate_rect(self.rect, Sense::click_and_drag());
+
+        let painter = ui.painter();
+
+        // 绘制棋盘背景
+        painter.rect_filled(self.rect, Rounding::ZERO, Color32::from_rgb(240, 217, 181));
+
+        // 绘制网格线
+        let stroke = Stroke::new(2.0, Color32::from_rgb(101, 67, 33));
+        
+        // 横线
+        for i in 0..BOARD_SIZE {
+            let y = self.rect.min.y + i as f32 * self.cell_size;
+            painter.line_segment(
+                [Pos2::new(self.rect.min.x, y), Pos2::new(self.rect.max.x, y)],
+                stroke,
+            );
+        }
+        
+        // 纵线
+        for i in 0..BOARD_SIZE {
+            let x = self.rect.min.x + i as f32 * self.cell_size;
+            painter.line_segment(
+                [Pos2::new(x, self.rect.min.y), Pos2::new(x, self.rect.max.y)],
+                stroke,
+            );
+        }
+
+        response
+    }
+
+    /// 渲染单个棋子
+    pub fn draw_piece(&self, ui: &mut Ui, piece: &Piece, is_dragging: bool, drag_pos: Option<Pos2>) {
+        let painter = ui.painter();
+
+        let pos = if is_dragging {
+            drag_pos.unwrap_or_else(|| self.board_to_screen(piece.position))
+        } else {
+            self.board_to_screen(piece.position)
+        };
+
+        let color = match piece.side {
+            Side::Black => Color32::from_rgb(30, 30, 30),
+            Side::White => Color32::from_rgb(240, 240, 240),
+        };
+
+        let stroke_color = match piece.side {
+            Side::Black => Color32::from_rgb(80, 80, 80),
+            Side::White => Color32::from_rgb(180, 180, 180),
+        };
+
+        // 绘制棋子阴影
+        if !is_dragging {
+            painter.circle_filled(
+                pos + Vec2::new(2.0, 2.0),
+                self.piece_radius,
+                Color32::from_rgba_premultiplied(0, 0, 0, 50),
+            );
+        }
+
+        // 绘制棋子本体
+        painter.circle_filled(pos, self.piece_radius, color);
+        painter.circle_stroke(pos, self.piece_radius, Stroke::new(2.0, stroke_color));
+
+        // 绘制高光效果
+        let highlight_offset = Vec2::new(-self.piece_radius * 0.3, -self.piece_radius * 0.3);
+        painter.circle_filled(
+            pos + highlight_offset,
+            self.piece_radius * 0.25,
+            Color32::from_rgba_premultiplied(255, 255, 255, if piece.side == Side::Black { 30 } else { 100 }),
+        );
+    }
+
+    /// 将棋盘坐标转换为屏幕坐标
+    /// 
+    /// 如果 flip 为 true，则翻转棋盘，使白棋在下方
+    pub fn board_to_screen(&self, pos: (u8, u8)) -> Pos2 {
+        let (bx, by) = if self.flip {
+            // 翻转：x镜像，y镜像
+            (BOARD_SIZE as u8 - 1 - pos.0, BOARD_SIZE as u8 - 1 - pos.1)
+        } else {
+            // 正常：黑棋在下方
+            pos
+        };
+        
+        let x = self.rect.min.x + bx as f32 * self.cell_size + self.cell_size / 2.0;
+        let y = self.rect.max.y - (by as f32 * self.cell_size + self.cell_size / 2.0);
+        Pos2::new(x, y)
+    }
+
+    /// 将屏幕坐标转换为棋盘坐标（带容错）
+    /// 
+    /// 如果 flip 为 true，则翻转棋盘坐标
+    pub fn screen_to_board(&self, pos: Pos2, tolerance: f32) -> Option<(u8, u8)> {
+        let rel_x = pos.x - self.rect.min.x;
+        let rel_y = self.rect.max.y - pos.y;
+
+        let board_x = (rel_x / self.cell_size).floor() as i32;
+        let board_y = (rel_y / self.cell_size).floor() as i32;
+
+        // 检查是否在容错范围内
+        let center_x = board_x as f32 * self.cell_size + self.cell_size / 2.0;
+        let center_y = board_y as f32 * self.cell_size + self.cell_size / 2.0;
+
+        let dist_x = (rel_x - center_x).abs();
+        let dist_y = (rel_y - center_y).abs();
+        let max_dist = self.cell_size * tolerance;
+
+        if dist_x <= max_dist && dist_y <= max_dist {
+            if board_x >= 0 && board_x < BOARD_SIZE as i32 
+                && board_y >= 0 && board_y < BOARD_SIZE as i32 {
+                let (bx, by) = (board_x as u8, board_y as u8);
+                // 如果翻转，需要转换回原始棋盘坐标
+                if self.flip {
+                    Some((BOARD_SIZE as u8 - 1 - bx, BOARD_SIZE as u8 - 1 - by))
+                } else {
+                    Some((bx, by))
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// 检查点是否在棋子内
+    pub fn hit_test_piece(&self, pos: Pos2, piece_pos: (u8, u8)) -> bool {
+        let piece_screen_pos = self.board_to_screen(piece_pos);
+        let dist = (pos - piece_screen_pos).length();
+        dist <= self.piece_radius
+    }
+
+    /// 绘制拖拽中的棋子（半透明）
+    pub fn draw_dragging_piece(&self, ui: &mut Ui, piece: &Piece, mouse_pos: Pos2) {
+        let painter = ui.painter();
+
+        let color = match piece.side {
+            Side::Black => Color32::from_rgba_premultiplied(30, 30, 30, 180),
+            Side::White => Color32::from_rgba_premultiplied(240, 240, 240, 180),
+        };
+
+        // 绘制半透明棋子跟随鼠标
+        painter.circle_filled(mouse_pos, self.piece_radius, color);
+        
+        // 绘制原位置虚线提示
+        let original_pos = self.board_to_screen(piece.position);
+        painter.circle_stroke(
+            original_pos,
+            self.piece_radius,
+            Stroke::new(2.0, Color32::from_rgba_premultiplied(128, 128, 128, 128)),
+        );
+    }
+
+    /// 绘制动画中的棋子
+    pub fn draw_animated_piece(&self, ui: &mut Ui, piece: &Piece, current_pos: Pos2) {
+        let painter = ui.painter();
+
+        let color = match piece.side {
+            Side::Black => Color32::from_rgb(30, 30, 30),
+            Side::White => Color32::from_rgb(240, 240, 240),
+        };
+
+        painter.circle_filled(current_pos, self.piece_radius, color);
+    }
+
+    /// 绘制被吃棋子动画（缩小淡出）
+    pub fn draw_capturing_piece(&self, ui: &mut Ui, piece: &Piece, progress: f32) {
+        let painter = ui.painter();
+
+        let alpha = ((1.0 - progress) * 255.0) as u8;
+        let radius = self.piece_radius * (1.0 - progress);
+
+        let color = match piece.side {
+            Side::Black => Color32::from_rgba_premultiplied(30, 30, 30, alpha),
+            Side::White => Color32::from_rgba_premultiplied(240, 240, 240, alpha),
+        };
+
+        let pos = self.board_to_screen(piece.position);
+        painter.circle_filled(pos, radius, color);
+    }
+
+    /// 绘制带透明度的棋子（用于悔棋动画渐显效果）
+    pub fn draw_piece_with_alpha(&self, ui: &mut Ui, piece: &Piece, pos: Pos2, alpha: u8) {
+        let painter = ui.painter();
+
+        let color = match piece.side {
+            Side::Black => Color32::from_rgba_premultiplied(30, 30, 30, alpha),
+            Side::White => Color32::from_rgba_premultiplied(240, 240, 240, alpha),
+        };
+
+        let stroke_color = if alpha > 100 {
+            match piece.side {
+                Side::Black => Color32::from_rgba_premultiplied(80, 80, 80, alpha),
+                Side::White => Color32::from_rgba_premultiplied(180, 180, 180, alpha),
+            }
+        } else {
+            Color32::TRANSPARENT
+        };
+
+        // 绘制棋子本体
+        painter.circle_filled(pos, self.piece_radius, color);
+        
+        // 绘制边框（当透明度足够时）
+        if alpha > 50 {
+            painter.circle_stroke(pos, self.piece_radius, Stroke::new(2.0, stroke_color));
+        }
+    }
+
+    /// 绘制可落子提示
+    pub fn draw_valid_move_hint(&self, ui: &mut Ui, pos: (u8, u8)) {
+        let painter = ui.painter();
+        let screen_pos = self.board_to_screen(pos);
+        let radius = self.piece_radius * 0.3;
+
+        painter.circle_filled(
+            screen_pos,
+            radius,
+            Color32::from_rgba_premultiplied(100, 200, 100, 150),
+        );
+    }
+
+    /// 绘制原始位置标记（棋子被吸附时显示）
+    pub fn draw_origin_marker(&self, ui: &mut Ui, pos: (u8, u8)) {
+        let painter = ui.painter();
+        let screen_pos = self.board_to_screen(pos);
+        
+        // 绘制虚线圆圈表示原始位置
+        let stroke = Stroke::new(
+            2.0,
+            Color32::from_rgba_premultiplied(100, 100, 100, 150),
+        );
+        
+        // 绘制虚线圆
+        let segments = 12;
+        for i in 0..segments {
+            if i % 2 == 0 {
+                let angle1 = (i as f32 / segments as f32) * std::f32::consts::TAU;
+                let angle2 = ((i + 1) as f32 / segments as f32) * std::f32::consts::TAU;
+                
+                let p1 = screen_pos + Vec2::new(angle1.cos(), angle1.sin()) * self.piece_radius * 1.1;
+                let p2 = screen_pos + Vec2::new(angle2.cos(), angle2.sin()) * self.piece_radius * 1.1;
+                
+                painter.line_segment([p1, p2], stroke);
+            }
+        }
+        
+        // 绘制中心小点
+        painter.circle_filled(
+            screen_pos,
+            self.piece_radius * 0.15,
+            Color32::from_rgba_premultiplied(150, 150, 150, 200),
+        );
+    }
+}

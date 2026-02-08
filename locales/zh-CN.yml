@@ -1,0 +1,59 @@
+_version: 2
+
+app:
+  title: "六子冲"
+  
+menu:
+  game: "游戏(G)"
+  new_game: "开始新局(N)..."
+  load_game: "加载游戏存档(L)..."
+  save_game: "保存当前棋局(S)..."
+  undo: "悔棋(U)"
+  language: "语言(L)"
+  lang_zh: "简体中文"
+  lang_en: "English"
+  exit: "退出(X)"
+  help: "帮助(H)"
+  rules: "行棋规则(R)"
+  about: "关于(A)"
+
+game:
+  player_win: "您赢了！"
+  ai_win: "电脑获胜！"
+  draw: "平局！"
+  black: "黑方"
+  white: "白方"
+  player_turn: "轮到您行棋"
+  ai_turn: "电脑思考中..."
+  select_side: "请选择执棋方"
+  play_first: "执黑先行"
+  play_second: "执白后行"
+  undo: "悔棋"
+  new_game_btn: "新局"
+  back_to_menu: "返回菜单"
+  
+dialog:
+  game_over: "游戏结束"
+  confirm_exit: "确认退出"
+  confirm_exit_msg: "当前棋局正在进行中，确定要退出吗？"
+  confirm_load: "确认加载"
+  confirm_load_msg: "当前棋局不是初始局面，加载将丢弃当前进度。是否继续？"
+  confirm_overwrite: "确认覆盖"
+  confirm_overwrite_msg: "文件已存在，是否覆盖？"
+  save_disabled: "保存不可用"
+  save_disabled_msg: "当前是初始局面，无需保存。"
+  file_filter: "六子冲存档 (*.6zc)"
+  yes: "是"
+  no: "否"
+  cancel: "取消"
+  ok: "确定"
+  
+rules:
+  title: "行棋规则"
+  board: "1. 棋盘：4×4交叉点，共16个落子点"
+  pieces: "2. 棋子：双方各6枚，黑方先行"
+  move: "3. 行棋：每次移动一枚棋子至相邻空点"
+  capture: "4. 吃子：形成「本方-本方-对方」连续排列时吃掉对方棋子"
+  single: "5. 单子：某方仅剩1枚时，改为「担」吃（对方-单子-对方）"
+  draw_rule: "6. 平局：双方棋子均不超过2枚时判平局"
+  stalemate: "7. 困毙：无合法移动时判负"
