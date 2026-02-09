@@ -564,7 +564,7 @@ impl MainApp {
         }
 
         let view = match self.board_view {
-            Some(ref v) => *v,
+            Some(ref v) => v.clone(),
             None => return,
         };
 
@@ -644,7 +644,7 @@ impl MainApp {
     /// 处理等待玩家行棋状态的输入
     fn handle_waiting_input(&mut self, response: &egui::Response) {
         let view = match self.board_view {
-            Some(ref v) => v,
+            Some(ref v) => v.clone(),
             None => return,
         };
 
@@ -680,7 +680,7 @@ impl MainApp {
     /// 处理棋子吸附状态的输入
     fn handle_dragging_input(&mut self, response: &egui::Response) {
         let view = match self.board_view {
-            Some(ref v) => v,
+            Some(ref v) => v.clone(),
             None => return,
         };
 
@@ -958,7 +958,7 @@ impl MainApp {
 
         // 根据玩家执子方决定是否翻转棋盘
         let flip = self.game.player_side == Side::White;
-        let view = BoardView::new(center, board_size, flip);
+        let view = BoardView::new(center, board_size, flip, ui.ctx());
 
         // 绘制棋盘
         let response = view.draw_board(ui);

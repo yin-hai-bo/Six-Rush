@@ -3370,6 +3370,7 @@ dependencies = [
  "eframe",
  "egui",
  "fontdb",
+ "image",
  "rand 0.8.5",
  "rfd",
  "rodio",

@@ -34,6 +34,9 @@ fontdb = "0.21"
 # 文件对话框
 rfd = "0.15"
 
+# 图片处理（用于加载棋子PNG）
+image = { version = "0.25", default-features = false, features = ["png"] }
+
 [profile.release]
 opt-level = 3
 lto = true

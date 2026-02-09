@@ -1,21 +1,33 @@
 //! 棋盘视图渲染
 
-use egui::{Color32, Pos2, Rect, Response, Rounding, Sense, Stroke, Ui, Vec2};
+use egui::{Color32, Pos2, Rect, Response, Rounding, Sense, Stroke, Ui, Vec2, Image, TextureHandle, Context};
 
 use crate::game::board::BOARD_SIZE;
 use crate::game::piece::{Piece, Side};
+use std::sync::Arc;
+
+/// 棋子图片资源（96x96 像素，按100%原大小显示）
+const BLACK_STONE_PNG: &[u8] = include_bytes!("../assets/images/black_stone.png");
+const WHITE_STONE_PNG: &[u8] = include_bytes!("../assets/images/white_stone.png");
+
+/// 棋子图片尺寸
+const STONE_SIZE: f32 = 96.0;
 
 /// 棋盘视图
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct BoardView {
     /// 棋盘矩形区域（屏幕坐标）
     pub rect: Rect,
     /// 格子大小
     pub cell_size: f32,
-    /// 棋子半径
+    /// 棋子半径（用于点击检测）
     pub piece_radius: f32,
     /// 是否翻转棋盘（玩家执白时翻转，使白棋在下方）
     pub flip: bool,
+    /// 黑子纹理
+    black_stone: Option<Arc<TextureHandle>>,
+    /// 白子纹理
+    white_stone: Option<Arc<TextureHandle>>,
 }
 
 impl BoardView {
@@ -25,18 +37,46 @@ impl BoardView {
     /// * `center` - 棋盘中心点
     /// * `size` - 棋盘大小
     /// * `flip` - 是否翻转棋盘（玩家执白时为true，使玩家棋子在下方）
-    pub fn new(center: Pos2, size: f32, flip: bool) -> Self {
+    /// * `ctx` - egui 上下文，用于加载纹理
+    pub fn new(center: Pos2, size: f32, flip: bool, ctx: &Context) -> Self {
         let _half = size / 2.0;
         let rect = Rect::from_center_size(center, Vec2::new(size, size));
         // 3x3格子，4x4交叉点，格子大小为 size / 3
         let cell_size = size / (BOARD_SIZE - 1) as f32;
-        let piece_radius = cell_size * 0.35;
+        // 棋子点击检测半径使用图片尺寸的一半
+        let piece_radius = STONE_SIZE / 2.0;
+
+        // 加载棋子图片纹理
+        let black_stone = Self::load_stone_texture(ctx, BLACK_STONE_PNG, "black_stone");
+        let white_stone = Self::load_stone_texture(ctx, WHITE_STONE_PNG, "white_stone");
 
         Self {
             rect,
             cell_size,
             piece_radius,
             flip,
+            black_stone,
+            white_stone,
+        }
+    }
+
+    /// 加载棋子图片纹理
+    fn load_stone_texture(ctx: &Context, bytes: &[u8], name: &str) -> Option<Arc<TextureHandle>> {
+        // 使用 image 库解码 PNG
+        match image::load_from_memory(bytes) {
+            Ok(image) => {
+                let image = image.to_rgba8();
+                let size = [image.width() as usize, image.height() as usize];
+                let pixels = image.as_raw();
+                
+                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, pixels);
+                let texture = ctx.load_texture(name, color_image, egui::TextureOptions::default());
+                Some(Arc::new(texture))
+            }
+            Err(e) => {
+                eprintln!("Failed to load stone texture '{}': {}", name, e);
+                None
+            }
         }
     }
 
@@ -74,46 +114,38 @@ impl BoardView {
         response
     }
 
-    /// 渲染单个棋子
+    /// 渲染单个棋子（使用图片，100%原大小显示）
     pub fn draw_piece(&self, ui: &mut Ui, piece: &Piece, is_dragging: bool, drag_pos: Option<Pos2>) {
-        let painter = ui.painter();
-
         let pos = if is_dragging {
             drag_pos.unwrap_or_else(|| self.board_to_screen(piece.position))
         } else {
             self.board_to_screen(piece.position)
         };
 
-        let color = match piece.side {
-            Side::Black => Color32::from_rgb(30, 30, 30),
-            Side::White => Color32::from_rgb(240, 240, 240),
+        // 获取对应的棋子纹理
+        let texture = match piece.side {
+            Side::Black => self.black_stone.as_ref(),
+            Side::White => self.white_stone.as_ref(),
         };
 
-        let stroke_color = match piece.side {
-            Side::Black => Color32::from_rgb(80, 80, 80),
-            Side::White => Color32::from_rgb(180, 180, 180),
-        };
-
-        // 绘制棋子阴影
-        if !is_dragging {
-            painter.circle_filled(
-                pos + Vec2::new(2.0, 2.0),
-                self.piece_radius,
-                Color32::from_rgba_premultiplied(0, 0, 0, 50),
-            );
+        if let Some(texture) = texture {
+            // 图片按100%原大小显示，居中于交叉点
+            let image_size = Vec2::new(STONE_SIZE, STONE_SIZE);
+            let image_rect = Rect::from_center_size(pos, image_size);
+            
+            let image = Image::from_texture(texture.as_ref())
+                .fit_to_exact_size(image_size);
+            
+            ui.put(image_rect, image);
+        } else {
+            // 如果图片加载失败，回退到代码绘制
+            let painter = ui.painter();
+            let color = match piece.side {
+                Side::Black => Color32::from_rgb(30, 30, 30),
+                Side::White => Color32::from_rgb(240, 240, 240),
+            };
+            painter.circle_filled(pos, self.piece_radius, color);
         }
-
-        // 绘制棋子本体
-        painter.circle_filled(pos, self.piece_radius, color);
-        painter.circle_stroke(pos, self.piece_radius, Stroke::new(2.0, stroke_color));
-
-        // 绘制高光效果
-        let highlight_offset = Vec2::new(-self.piece_radius * 0.3, -self.piece_radius * 0.3);
-        painter.circle_filled(
-            pos + highlight_offset,
-            self.piece_radius * 0.25,
-            Color32::from_rgba_premultiplied(255, 255, 255, if piece.side == Side::Black { 30 } else { 100 }),
-        );
     }
 
     /// 将棋盘坐标转换为屏幕坐标
