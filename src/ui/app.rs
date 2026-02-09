@@ -648,8 +648,8 @@ impl MainApp {
             None => return,
         };
 
-        // 处理鼠标左键按下（开始拖拽）
-        if response.drag_started() && response.dragged_by(egui::PointerButton::Primary) {
+        // 处理鼠标左键点击（进入棋子吸附状态）
+        if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(pos) = response.interact_pointer_pos() {
                 // 查找点击的己方棋子
                 let clicked_piece = self.game.board.active_pieces_of(self.game.player_side)
@@ -666,7 +666,7 @@ impl MainApp {
                             start_pos: piece.position,
                             current_mouse_pos: (pos.x, pos.y),
                         });
-                        // 然后发送事件
+                        // 发送事件进入吸附状态
                         let _ = self.game.handle_event(GameEvent::PlayerStartDrag {
                             piece_id: piece.id,
                             start_pos: piece.position,
@@ -693,9 +693,9 @@ impl MainApp {
             });
         }
 
-        // 更新拖拽位置
+        // 更新吸附位置（鼠标移动时棋子跟随，不需要按住鼠标）
         if let Some(ref mut drag_info) = self.drag_info {
-            if let Some(pos) = response.interact_pointer_pos() {
+            if let Some(pos) = response.hover_pos() {
                 // 限制在棋盘范围内
                 let clamped_pos = egui::Pos2::new(
                     pos.x.clamp(view.rect.min.x, view.rect.max.x),
@@ -710,8 +710,8 @@ impl MainApp {
             }
         }
 
-        // 处理右键取消
-        if response.drag_stopped() && response.drag_stopped_by(egui::PointerButton::Secondary) {
+        // 处理右键取消（点击右键取消吸附）
+        if response.clicked_by(egui::PointerButton::Secondary) {
             self.sound.place();
             
             if let Some(drag_info) = self.drag_info.take() {
@@ -732,8 +732,8 @@ impl MainApp {
             return;
         }
 
-        // 处理左键落子
-        if response.drag_stopped() && response.drag_stopped_by(egui::PointerButton::Primary) {
+        // 处理左键落子（点击左键放下棋子）
+        if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(drag_info) = self.drag_info.take() {
                 let current_pos = egui::Pos2::new(drag_info.current_mouse_pos.0, drag_info.current_mouse_pos.1);
                 

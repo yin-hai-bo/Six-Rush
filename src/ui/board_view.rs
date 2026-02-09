@@ -245,20 +245,43 @@ impl BoardView {
         dist <= self.piece_radius
     }
 
-    /// 绘制拖拽中的棋子（半透明）
+    /// 绘制拖拽中的棋子（使用图片，半透明效果）
     pub fn draw_dragging_piece(&self, ui: &mut Ui, piece: &Piece, mouse_pos: Pos2) {
-        let painter = ui.painter();
-
-        let color = match piece.side {
-            Side::Black => Color32::from_rgba_premultiplied(30, 30, 30, 180),
-            Side::White => Color32::from_rgba_premultiplied(240, 240, 240, 180),
+        // 获取对应的棋子纹理
+        let texture = match piece.side {
+            Side::Black => self.black_stone.as_ref(),
+            Side::White => self.white_stone.as_ref(),
         };
 
-        // 绘制半透明棋子跟随鼠标
-        painter.circle_filled(mouse_pos, self.piece_radius, color);
+        if let Some(texture) = texture {
+            // 图片按100%原大小显示，居中于鼠标位置
+            let image_size = Vec2::new(STONE_SIZE, STONE_SIZE);
+            let image_rect = Rect::from_center_size(mouse_pos, image_size);
+            
+            // 使用半透明色调绘制
+            let tint = match piece.side {
+                Side::Black => Color32::from_rgba_premultiplied(255, 255, 255, 200),
+                Side::White => Color32::from_rgba_premultiplied(255, 255, 255, 200),
+            };
+            
+            let image = Image::from_texture(texture.as_ref())
+                .fit_to_exact_size(image_size)
+                .tint(tint);
+            
+            ui.put(image_rect, image);
+        } else {
+            // 如果图片加载失败，回退到代码绘制
+            let painter = ui.painter();
+            let color = match piece.side {
+                Side::Black => Color32::from_rgba_premultiplied(30, 30, 30, 180),
+                Side::White => Color32::from_rgba_premultiplied(240, 240, 240, 180),
+            };
+            painter.circle_filled(mouse_pos, self.piece_radius, color);
+        }
 
         // 绘制原位置虚线提示
         let original_pos = self.board_to_screen(piece.position);
+        let painter = ui.painter();
         painter.circle_stroke(
             original_pos,
             self.piece_radius,
