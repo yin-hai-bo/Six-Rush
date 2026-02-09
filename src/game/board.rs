@@ -146,6 +146,8 @@ impl Board {
 
     /// 获取某位置在屏幕上的坐标（用于渲染）
     /// 
+    /// 棋子放在交叉点上（线的交点），而不是格子中间
+    /// 
     /// 参数:
     /// - board_rect: 棋盘在屏幕上的矩形区域 (x, y, width, height)
     /// - pos: 棋盘坐标 (x, y)，范围 0-3
@@ -153,17 +155,20 @@ impl Board {
     /// 返回: 屏幕坐标 (x, y)
     pub fn board_to_screen(board_rect: (f32, f32, f32, f32), pos: (u8, u8)) -> (f32, f32) {
         let (bx, by, bw, bh) = board_rect;
-        let cell_w = bw / BOARD_SIZE as f32;
-        let cell_h = bh / BOARD_SIZE as f32;
+        // 3x3格子，4x4交叉点，格子大小为 width / 3
+        let cell_w = bw / (BOARD_SIZE - 1) as f32;
+        let cell_h = bh / (BOARD_SIZE - 1) as f32;
         
-        // (0,0) 在左下角
-        let screen_x = bx + pos.0 as f32 * cell_w + cell_w / 2.0;
-        let screen_y = by + bh - (pos.1 as f32 * cell_h + cell_h / 2.0);
+        // (0,0) 在左下角，棋子放在交叉点上
+        let screen_x = bx + pos.0 as f32 * cell_w;
+        let screen_y = by + bh - pos.1 as f32 * cell_h;
         
         (screen_x, screen_y)
     }
 
     /// 将屏幕坐标转换为棋盘坐标
+    /// 
+    /// 棋子放在交叉点上（线的交点）
     /// 
     /// 参数:
     /// - board_rect: 棋盘在屏幕上的矩形区域
@@ -177,23 +182,24 @@ impl Board {
         tolerance: f32,
     ) -> Option<(u8, u8)> {
         let (bx, by, bw, bh) = board_rect;
-        let cell_w = bw / BOARD_SIZE as f32;
-        let cell_h = bh / BOARD_SIZE as f32;
+        // 3x3格子，4x4交叉点，格子大小为 width / 3
+        let cell_w = bw / (BOARD_SIZE - 1) as f32;
+        let cell_h = bh / (BOARD_SIZE - 1) as f32;
 
         // 计算相对于棋盘左下角的坐标
         let rel_x = screen_pos.0 - bx;
         let rel_y = bh - (screen_pos.1 - by); // 翻转Y轴
 
-        // 计算最近的棋盘坐标
-        let board_x = (rel_x / cell_w).floor() as i32;
-        let board_y = (rel_y / cell_h).floor() as i32;
+        // 计算最近的交叉点索引（0-3）
+        let board_x = (rel_x / cell_w).round() as i32;
+        let board_y = (rel_y / cell_h).round() as i32;
 
-        // 检查是否在容错范围内
-        let center_x = board_x as f32 * cell_w + cell_w / 2.0;
-        let center_y = board_y as f32 * cell_h + cell_h / 2.0;
+        // 检查是否在容错范围内（以交叉点为中心）
+        let cross_x = board_x as f32 * cell_w;
+        let cross_y = board_y as f32 * cell_h;
         
-        let dist_x = (rel_x - center_x).abs();
-        let dist_y = (rel_y - center_y).abs();
+        let dist_x = (rel_x - cross_x).abs();
+        let dist_y = (rel_y - cross_y).abs();
         
         let max_dist = cell_w.min(cell_h) * tolerance;
 

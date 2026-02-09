@@ -28,7 +28,8 @@ impl BoardView {
     pub fn new(center: Pos2, size: f32, flip: bool) -> Self {
         let _half = size / 2.0;
         let rect = Rect::from_center_size(center, Vec2::new(size, size));
-        let cell_size = size / BOARD_SIZE as f32;
+        // 3x3格子，4x4交叉点，格子大小为 size / 3
+        let cell_size = size / (BOARD_SIZE - 1) as f32;
         let piece_radius = cell_size * 0.35;
 
         Self {
@@ -49,9 +50,10 @@ impl BoardView {
         painter.rect_filled(self.rect, Rounding::ZERO, Color32::from_rgb(240, 217, 181));
 
         // 绘制网格线
+        // 3x3格子 = 4条线，棋子放在4x4交叉点上
         let stroke = Stroke::new(2.0, Color32::from_rgb(101, 67, 33));
         
-        // 横线
+        // 横线 (4条，i=0,1,2,3)
         for i in 0..BOARD_SIZE {
             let y = self.rect.min.y + i as f32 * self.cell_size;
             painter.line_segment(
@@ -60,7 +62,7 @@ impl BoardView {
             );
         }
         
-        // 纵线
+        // 纵线 (4条，i=0,1,2,3)
         for i in 0..BOARD_SIZE {
             let x = self.rect.min.x + i as f32 * self.cell_size;
             painter.line_segment(
@@ -116,6 +118,7 @@ impl BoardView {
 
     /// 将棋盘坐标转换为屏幕坐标
     /// 
+    /// 棋子放在交叉点上（线的交点），而不是格子中间
     /// 如果 flip 为 true，则翻转棋盘，使白棋在下方
     pub fn board_to_screen(&self, pos: (u8, u8)) -> Pos2 {
         let (bx, by) = if self.flip {
@@ -126,27 +129,30 @@ impl BoardView {
             pos
         };
         
-        let x = self.rect.min.x + bx as f32 * self.cell_size + self.cell_size / 2.0;
-        let y = self.rect.max.y - (by as f32 * self.cell_size + self.cell_size / 2.0);
+        // 棋子放在交叉点上（线的交点），不需要加 cell_size/2.0 偏移
+        let x = self.rect.min.x + bx as f32 * self.cell_size;
+        let y = self.rect.max.y - by as f32 * self.cell_size;
         Pos2::new(x, y)
     }
 
     /// 将屏幕坐标转换为棋盘坐标（带容错）
     /// 
+    /// 棋子放在交叉点上（线的交点）
     /// 如果 flip 为 true，则翻转棋盘坐标
     pub fn screen_to_board(&self, pos: Pos2, tolerance: f32) -> Option<(u8, u8)> {
         let rel_x = pos.x - self.rect.min.x;
         let rel_y = self.rect.max.y - pos.y;
 
-        let board_x = (rel_x / self.cell_size).floor() as i32;
-        let board_y = (rel_y / self.cell_size).floor() as i32;
+        // 计算最近的交叉点索引（0-3）
+        let board_x = (rel_x / self.cell_size).round() as i32;
+        let board_y = (rel_y / self.cell_size).round() as i32;
 
-        // 检查是否在容错范围内
-        let center_x = board_x as f32 * self.cell_size + self.cell_size / 2.0;
-        let center_y = board_y as f32 * self.cell_size + self.cell_size / 2.0;
+        // 检查是否在容错范围内（以交叉点为中心）
+        let cross_x = board_x as f32 * self.cell_size;
+        let cross_y = board_y as f32 * self.cell_size;
 
-        let dist_x = (rel_x - center_x).abs();
-        let dist_y = (rel_y - center_y).abs();
+        let dist_x = (rel_x - cross_x).abs();
+        let dist_y = (rel_y - cross_y).abs();
         let max_dist = self.cell_size * tolerance;
 
         if dist_x <= max_dist && dist_y <= max_dist {
