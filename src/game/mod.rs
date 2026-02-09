@@ -120,7 +120,7 @@ impl Game {
                 self.state = GameState::WaitingForPlayer;
             }
             
-            // ===== 等待玩家行棋 =====
+            // ===== 等待玩家行棋（初始状态）=====
             (GameState::WaitingForPlayer, GameEvent::PlayerStartDrag { piece_id, start_pos }) => {
                 // 检查是否是己方棋子且有可移动位置
                 if self.can_piece_move(piece_id) {
@@ -129,7 +129,8 @@ impl Game {
                         start_pos,
                         current_mouse_pos: (0.0, 0.0),
                     });
-                    self.state = GameState::PieceDragging;
+                    // 进入初始吸附状态
+                    self.state = GameState::PieceSelected;
                 }
             }
             
@@ -139,13 +140,31 @@ impl Game {
                 }
             }
             
-            // ===== 棋子吸附状态 =====
+            // ===== 初始吸附状态 =====
+            // 玩家移动鼠标，进入拖拽状态
+            (GameState::PieceSelected, GameEvent::PlayerStartMoving) => {
+                self.state = GameState::PieceDragging;
+            }
+            
+            // 玩家松开左键（未移动），进入待点击目标点状态
+            (GameState::PieceSelected, GameEvent::PlayerReleaseWithoutMove) => {
+                self.state = GameState::WaitingForTargetClick;
+            }
+            
+            // 玩家点击右键，返回初始状态
+            (GameState::PieceSelected, GameEvent::PlayerCancel) => {
+                self.drag_state = None;
+                self.state = GameState::WaitingForPlayer;
+            }
+            
+            // ===== 拖拽状态 =====
             (GameState::PieceDragging, GameEvent::PlayerDrop { target_pos }) => {
                 if let Some(drag) = self.drag_state {
                     // 检查落点是否合法
                     if is_valid_move(&self.board, drag.start_pos, target_pos, self.player_side) {
                         // 如果落点与起始位置相同，直接回到等待状态
                         if drag.start_pos == target_pos {
+                            self.drag_state = None;
                             self.state = GameState::WaitingForPlayer;
                         } else {
                             // 执行移动
@@ -155,19 +174,46 @@ impl Game {
                                 is_ai: false,
                             });
                             self.state = GameState::PieceMoving;
+                            self.drag_state = None;
                         }
                     } else {
                         // 非法落点，进入放回动画
                         self.state = GameState::PieceReturning;
+                        self.drag_state = None;
                     }
-                    self.drag_state = None;
                 }
             }
             
             (GameState::PieceDragging, GameEvent::PlayerCancel) => {
                 // 右键取消，进入放回动画
-                self.drag_state = None;
                 self.state = GameState::PieceReturning;
+                self.drag_state = None;
+            }
+            
+            // ===== 待点击目标点状态 =====
+            (GameState::WaitingForTargetClick, GameEvent::PlayerClickTarget { target_pos }) => {
+                if let Some(drag) = self.drag_state {
+                    // 执行移动
+                    self.pending_move = Some(PendingMove {
+                        from: drag.start_pos,
+                        to: target_pos,
+                        is_ai: false,
+                    });
+                    self.state = GameState::PieceMoving;
+                    self.drag_state = None;
+                }
+            }
+            
+            // 点击了非目标点，返回初始状态
+            (GameState::WaitingForTargetClick, GameEvent::PlayerClickInvalid) => {
+                self.drag_state = None;
+                self.state = GameState::WaitingForPlayer;
+            }
+            
+            // 点击右键，返回初始状态
+            (GameState::WaitingForTargetClick, GameEvent::PlayerCancel) => {
+                self.drag_state = None;
+                self.state = GameState::WaitingForPlayer;
             }
             
             // ===== 棋子移动动画 =====

@@ -389,4 +389,48 @@ impl BoardView {
             Color32::from_rgba_premultiplied(150, 150, 150, 200),
         );
     }
+    
+    /// 绘制高亮原始位置（用于初始吸附状态和待点击目标点状态）
+    pub fn draw_origin_highlight(&self, ui: &mut Ui, pos: (u8, u8)) {
+        let painter = ui.painter();
+        let screen_pos = self.board_to_screen(pos);
+        
+        // 绘制外圈发光效果
+        let glow_color = Color32::from_rgba_premultiplied(255, 215, 0, 100); // 金色半透明
+        painter.circle_filled(screen_pos, self.piece_radius * 1.2, glow_color);
+        
+        // 绘制内圈实心高亮
+        let highlight_color = Color32::from_rgba_premultiplied(255, 255, 0, 150); // 黄色
+        painter.circle_filled(screen_pos, self.piece_radius, highlight_color);
+        
+        // 绘制边框
+        painter.circle_stroke(
+            screen_pos,
+            self.piece_radius * 1.2,
+            Stroke::new(3.0, Color32::from_rgb(255, 165, 0)), // 橙色边框
+        );
+    }
+    
+    /// 绘制合法目标点标注
+    pub fn draw_valid_move_hints(&self, ui: &mut Ui, valid_moves: &[(u8, u8)]) {
+        let painter = ui.painter();
+        
+        for pos in valid_moves {
+            let screen_pos = self.board_to_screen(*pos);
+            
+            // 绘制绿色圆点表示合法目标点
+            painter.circle_filled(
+                screen_pos,
+                self.cell_size * 0.15, // 小圆点
+                Color32::from_rgba_premultiplied(0, 255, 0, 180), // 绿色半透明
+            );
+            
+            // 绘制外圈
+            painter.circle_stroke(
+                screen_pos,
+                self.cell_size * 0.2,
+                Stroke::new(2.0, Color32::from_rgba_premultiplied(0, 200, 0, 200)),
+            );
+        }
+    }
 }
