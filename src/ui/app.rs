@@ -923,16 +923,27 @@ impl MainApp {
             }
             GameState::CheckingGameEnd => {
                 let result = self.game.check_game_end();
-                let _ = self.game.handle_event(GameEvent::GameEndCheckComplete { result });
+                
+                // 检查是否需要切换回合后再检查困毙（AI移动后需要检查人类方）
+                let final_result = if result.is_none() {
+                    // 先发送事件给状态机处理（这会切换回合）
+                    let _ = self.game.handle_event(GameEvent::GameEndCheckComplete { result });
+                    // 切换回合后，检查新回合方是否被困毙
+                    self.game.check_stalemate_for_current_turn()
+                } else {
+                    // 已经有结果（无子判负或平局），直接发送事件
+                    let _ = self.game.handle_event(GameEvent::GameEndCheckComplete { result });
+                    result
+                };
                 
                 // 如果游戏结束，播放相应音效并显示对话框
-                if let Some(result) = result {
-                    match result {
+                if let Some(final_result) = final_result {
+                    match final_result {
                         GameResult::PlayerWin => self.sound.win(),
                         GameResult::AiWin => self.sound.lose(),
                         GameResult::Draw => self.sound.draw(),
                     }
-                    self.game_over_dialog = GameOverDialog::Open(result);
+                    self.game_over_dialog = GameOverDialog::Open(final_result);
                 }
             }
             _ => {}

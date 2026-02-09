@@ -216,11 +216,18 @@ impl Game {
                     // 切换回合
                     self.current_turn = self.current_turn.opposite();
                     
-                    // 根据当前轮到谁决定下一状态
-                    if self.current_turn == self.player_side {
-                        self.state = GameState::WaitingForPlayer;
+                    // 切换回合后，检查新回合方是否被困毙
+                    // 注意：这里需要检查新回合方（current_turn）是否有合法移动
+                    if let Some(stalemate_result) = self.check_stalemate_for_current_turn() {
+                        self.last_result = Some(stalemate_result);
+                        self.state = GameState::GameOverDialog(stalemate_result);
                     } else {
-                        self.state = GameState::AiThinking;
+                        // 根据当前轮到谁决定下一状态
+                        if self.current_turn == self.player_side {
+                            self.state = GameState::WaitingForPlayer;
+                        } else {
+                            self.state = GameState::AiThinking;
+                        }
                     }
                 }
             }
@@ -378,6 +385,24 @@ impl Game {
     /// 检查游戏是否结束
     pub fn check_game_end(&self) -> Option<GameResult> {
         check_game_end(&self.board, self.current_turn, self.player_side)
+    }
+    
+    /// 检查当前回合方是否被困毙
+    /// 返回 Some(GameResult) 如果当前方被困毙，否则返回 None
+    pub fn check_stalemate_for_current_turn(&self) -> Option<GameResult> {
+        use crate::game::rules::is_stalemated;
+        
+        if is_stalemated(&self.board, self.current_turn) {
+            // 当前方被困毙，判负，对方获胜
+            let winner = self.current_turn.opposite();
+            Some(if winner == self.player_side {
+                GameResult::PlayerWin
+            } else {
+                GameResult::AiWin
+            })
+        } else {
+            None
+        }
     }
     
     /// 执行AI移动（由外部AI模块调用）
