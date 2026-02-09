@@ -10,8 +10,14 @@ use std::sync::Arc;
 const BLACK_STONE_PNG: &[u8] = include_bytes!("../assets/images/black_stone.png");
 const WHITE_STONE_PNG: &[u8] = include_bytes!("../assets/images/white_stone.png");
 
+/// 棋盘背景图（木纹背景）
+const BOARD_BG_PNG: &[u8] = include_bytes!("../assets/images/board_bg.png");
+
 /// 棋子图片尺寸
 const STONE_SIZE: f32 = 96.0;
+
+/// 棋盘边距比例（线条与边缘的距离）
+const BOARD_MARGIN_RATIO: f32 = 0.1; // 10% 边距
 
 /// 棋盘视图
 #[derive(Clone)]
@@ -28,11 +34,15 @@ pub struct BoardView {
     black_stone: Option<Arc<TextureHandle>>,
     /// 白子纹理
     white_stone: Option<Arc<TextureHandle>>,
+    /// 棋盘背景纹理
+    board_texture: Option<Arc<TextureHandle>>,
+    /// 棋盘边距（线条与边缘的距离）
+    board_margin: f32,
 }
 
 impl BoardView {
     /// 创建棋盘视图
-    /// 
+    ///
     /// # Arguments
     /// * `center` - 棋盘中心点
     /// * `size` - 棋盘大小
@@ -41,14 +51,22 @@ impl BoardView {
     pub fn new(center: Pos2, size: f32, flip: bool, ctx: &Context) -> Self {
         let _half = size / 2.0;
         let rect = Rect::from_center_size(center, Vec2::new(size, size));
-        // 3x3格子，4x4交叉点，格子大小为 size / 3
-        let cell_size = size / (BOARD_SIZE - 1) as f32;
+
+        // 棋盘边距（线条与边缘的距离）
+        let board_margin = size * BOARD_MARGIN_RATIO;
+        // 内部区域大小（用于放置4x4交叉点）
+        let inner_size = size - 2.0 * board_margin;
+        // 3x3格子，4x4交叉点，格子大小为内部区域 / 3
+        let cell_size = inner_size / (BOARD_SIZE - 1) as f32;
+
         // 棋子点击检测半径使用图片尺寸的一半
         let piece_radius = STONE_SIZE / 2.0;
 
         // 加载棋子图片纹理
         let black_stone = Self::load_stone_texture(ctx, BLACK_STONE_PNG, "black_stone");
         let white_stone = Self::load_stone_texture(ctx, WHITE_STONE_PNG, "white_stone");
+        // 加载棋盘背景纹理
+        let board_texture = Self::load_stone_texture(ctx, BOARD_BG_PNG, "board_bg");
 
         Self {
             rect,
@@ -57,6 +75,8 @@ impl BoardView {
             flip,
             black_stone,
             white_stone,
+            board_texture,
+            board_margin,
         }
     }
 
@@ -68,7 +88,7 @@ impl BoardView {
                 let image = image.to_rgba8();
                 let size = [image.width() as usize, image.height() as usize];
                 let pixels = image.as_raw();
-                
+
                 let color_image = egui::ColorImage::from_rgba_unmultiplied(size, pixels);
                 let texture = ctx.load_texture(name, color_image, egui::TextureOptions::default());
                 Some(Arc::new(texture))
@@ -80,33 +100,45 @@ impl BoardView {
         }
     }
 
-    /// 渲染棋盘背景
+    /// 渲染棋盘背景（使用图片背景 + 程序绘制网格线）
     pub fn draw_board(&self, ui: &mut Ui) -> Response {
         let response = ui.allocate_rect(self.rect, Sense::click_and_drag());
 
+        // 绘制棋盘背景图
+        if let Some(ref texture) = self.board_texture {
+            let image = Image::from_texture(texture.as_ref())
+                .fit_to_exact_size(self.rect.size());
+            ui.put(self.rect, image);
+        } else {
+            // 如果图片加载失败，使用纯色背景
+            let painter = ui.painter();
+            painter.rect_filled(self.rect, Rounding::ZERO, Color32::from_rgb(240, 217, 181));
+        }
+
+        // 绘制网格线（带边距，使线条在棋盘内部）
         let painter = ui.painter();
+        let stroke = Stroke::new(2.5, Color32::from_rgb(60, 40, 20));
 
-        // 绘制棋盘背景
-        painter.rect_filled(self.rect, Rounding::ZERO, Color32::from_rgb(240, 217, 181));
+        // 计算线条起始和结束位置（带边距）
+        let start_x = self.rect.min.x + self.board_margin;
+        let end_x = self.rect.max.x - self.board_margin;
+        let start_y = self.rect.min.y + self.board_margin;
+        let end_y = self.rect.max.y - self.board_margin;
 
-        // 绘制网格线
-        // 3x3格子 = 4条线，棋子放在4x4交叉点上
-        let stroke = Stroke::new(2.0, Color32::from_rgb(101, 67, 33));
-        
         // 横线 (4条，i=0,1,2,3)
         for i in 0..BOARD_SIZE {
-            let y = self.rect.min.y + i as f32 * self.cell_size;
+            let y = start_y + i as f32 * self.cell_size;
             painter.line_segment(
-                [Pos2::new(self.rect.min.x, y), Pos2::new(self.rect.max.x, y)],
+                [Pos2::new(start_x, y), Pos2::new(end_x, y)],
                 stroke,
             );
         }
-        
+
         // 纵线 (4条，i=0,1,2,3)
         for i in 0..BOARD_SIZE {
-            let x = self.rect.min.x + i as f32 * self.cell_size;
+            let x = start_x + i as f32 * self.cell_size;
             painter.line_segment(
-                [Pos2::new(x, self.rect.min.y), Pos2::new(x, self.rect.max.y)],
+                [Pos2::new(x, start_y), Pos2::new(x, end_y)],
                 stroke,
             );
         }
@@ -132,10 +164,10 @@ impl BoardView {
             // 图片按100%原大小显示，居中于交叉点
             let image_size = Vec2::new(STONE_SIZE, STONE_SIZE);
             let image_rect = Rect::from_center_size(pos, image_size);
-            
+
             let image = Image::from_texture(texture.as_ref())
                 .fit_to_exact_size(image_size);
-            
+
             ui.put(image_rect, image);
         } else {
             // 如果图片加载失败，回退到代码绘制
@@ -149,8 +181,8 @@ impl BoardView {
     }
 
     /// 将棋盘坐标转换为屏幕坐标
-    /// 
-    /// 棋子放在交叉点上（线的交点），而不是格子中间
+    ///
+    /// 棋子放在交叉点上（线的交点），考虑边距
     /// 如果 flip 为 true，则翻转棋盘，使白棋在下方
     pub fn board_to_screen(&self, pos: (u8, u8)) -> Pos2 {
         let (bx, by) = if self.flip {
@@ -160,20 +192,21 @@ impl BoardView {
             // 正常：黑棋在下方
             pos
         };
-        
-        // 棋子放在交叉点上（线的交点），不需要加 cell_size/2.0 偏移
-        let x = self.rect.min.x + bx as f32 * self.cell_size;
-        let y = self.rect.max.y - by as f32 * self.cell_size;
+
+        // 棋子放在交叉点上，考虑边距偏移
+        let x = self.rect.min.x + self.board_margin + bx as f32 * self.cell_size;
+        let y = self.rect.max.y - self.board_margin - by as f32 * self.cell_size;
         Pos2::new(x, y)
     }
 
     /// 将屏幕坐标转换为棋盘坐标（带容错）
-    /// 
-    /// 棋子放在交叉点上（线的交点）
+    ///
+    /// 棋子放在交叉点上（线的交点），考虑边距
     /// 如果 flip 为 true，则翻转棋盘坐标
     pub fn screen_to_board(&self, pos: Pos2, tolerance: f32) -> Option<(u8, u8)> {
-        let rel_x = pos.x - self.rect.min.x;
-        let rel_y = self.rect.max.y - pos.y;
+        // 相对于棋盘左下角（考虑边距）的坐标
+        let rel_x = pos.x - self.rect.min.x - self.board_margin;
+        let rel_y = self.rect.max.y - pos.y - self.board_margin;
 
         // 计算最近的交叉点索引（0-3）
         let board_x = (rel_x / self.cell_size).round() as i32;
@@ -188,7 +221,7 @@ impl BoardView {
         let max_dist = self.cell_size * tolerance;
 
         if dist_x <= max_dist && dist_y <= max_dist {
-            if board_x >= 0 && board_x < BOARD_SIZE as i32 
+            if board_x >= 0 && board_x < BOARD_SIZE as i32
                 && board_y >= 0 && board_y < BOARD_SIZE as i32 {
                 let (bx, by) = (board_x as u8, board_y as u8);
                 // 如果翻转，需要转换回原始棋盘坐标
@@ -223,7 +256,7 @@ impl BoardView {
 
         // 绘制半透明棋子跟随鼠标
         painter.circle_filled(mouse_pos, self.piece_radius, color);
-        
+
         // 绘制原位置虚线提示
         let original_pos = self.board_to_screen(piece.position);
         painter.circle_stroke(
@@ -281,7 +314,7 @@ impl BoardView {
 
         // 绘制棋子本体
         painter.circle_filled(pos, self.piece_radius, color);
-        
+
         // 绘制边框（当透明度足够时）
         if alpha > 50 {
             painter.circle_stroke(pos, self.piece_radius, Stroke::new(2.0, stroke_color));
@@ -305,27 +338,27 @@ impl BoardView {
     pub fn draw_origin_marker(&self, ui: &mut Ui, pos: (u8, u8)) {
         let painter = ui.painter();
         let screen_pos = self.board_to_screen(pos);
-        
+
         // 绘制虚线圆圈表示原始位置
         let stroke = Stroke::new(
             2.0,
             Color32::from_rgba_premultiplied(100, 100, 100, 150),
         );
-        
+
         // 绘制虚线圆
         let segments = 12;
         for i in 0..segments {
             if i % 2 == 0 {
                 let angle1 = (i as f32 / segments as f32) * std::f32::consts::TAU;
                 let angle2 = ((i + 1) as f32 / segments as f32) * std::f32::consts::TAU;
-                
+
                 let p1 = screen_pos + Vec2::new(angle1.cos(), angle1.sin()) * self.piece_radius * 1.1;
                 let p2 = screen_pos + Vec2::new(angle2.cos(), angle2.sin()) * self.piece_radius * 1.1;
-                
+
                 painter.line_segment([p1, p2], stroke);
             }
         }
-        
+
         // 绘制中心小点
         painter.circle_filled(
             screen_pos,
