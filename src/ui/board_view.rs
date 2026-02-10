@@ -147,24 +147,14 @@ impl BoardView {
     }
 
     /// 渲染单个棋子（使用图片，100%原大小显示）
-    /// 
+    ///
     /// # Arguments
     /// * `ui` - egui UI
     /// * `piece` - 要绘制的棋子
     /// * `is_selected` - 是否被选中（选中时添加高亮效果）
     pub fn draw_piece(&self, ui: &mut Ui, piece: &Piece, is_selected: bool) {
+        let _ = is_selected;
         let pos = self.board_to_screen(piece.position);
-
-        // 如果被选中，在棋子周围绘制高亮环
-        if is_selected {
-            let painter = ui.painter();
-            let highlight_radius = self.piece_radius * 1.25;
-            painter.circle_stroke(
-                pos,
-                highlight_radius,
-                Stroke::new(4.0, Color32::from_rgba_unmultiplied(0, 160, 0, 180)),
-            );
-        }
 
         // 获取对应的棋子纹理
         let texture = match piece.side {
@@ -332,16 +322,9 @@ impl BoardView {
         let screen_pos = self.board_to_screen(pos);
 
         // 绘制外圈光晕效果
-        let ring_outer_radius = self.piece_radius * 1.3;
-        let ring_color = Color32::from_rgba_unmultiplied(64, 64, 64, 32); // 灰色半透明光晕
-        painter.circle_filled(screen_pos, ring_outer_radius, ring_color);
-
-        // 绘制边框
-        painter.circle_stroke(
-            screen_pos,
-            self.piece_radius * 1.2,
-            Stroke::new(3.0, Color32::from_rgba_unmultiplied(64, 64, 64, 64)), // 灰色边框
-        );
+        let ring_outer_radius = self.piece_radius * 1.02;
+        let color = Color32::from_rgba_unmultiplied(192, 192, 192, 128);
+        painter.circle_filled(screen_pos, ring_outer_radius, color);
     }
 
     /// 绘制合法目标点标注
@@ -351,19 +334,19 @@ impl BoardView {
 
         for pos in valid_moves {
             let screen_pos = self.board_to_screen(*pos);
-
+            let color = Color32::from_rgba_unmultiplied(0, 128, 0, 64);
             // 绘制绿色圆点表示合法目标点
             painter.circle_filled(
                 screen_pos,
-                self.cell_size * 0.18, // 稍大的圆点
-                Color32::from_rgba_unmultiplied(0, 32, 0, 16), // 透明绿色圆点
+                self.cell_size * 0.15, // 稍大的圆点
+                color,
             );
 
             // 绘制外圈
             painter.circle_stroke(
                 screen_pos,
-                self.cell_size * 0.25,
-                Stroke::new(2.0, Color32::from_rgba_unmultiplied(0, 32, 0, 32)), // 透明绿色外圈
+                self.cell_size * 0.2,
+                Stroke::new(2.0, color),
             );
         }
     }
