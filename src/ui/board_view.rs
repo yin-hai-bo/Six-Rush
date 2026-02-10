@@ -248,58 +248,118 @@ impl BoardView {
         dist <= self.piece_radius
     }
 
-    /// 绘制动画中的棋子
+    /// 绘制动画中的棋子（使用图片）
     pub fn draw_animated_piece(&self, ui: &mut Ui, piece: &Piece, current_pos: Pos2) {
-        let painter = ui.painter();
-
-        let color = match piece.side {
-            Side::Black => Color32::from_rgb(30, 30, 30),
-            Side::White => Color32::from_rgb(240, 240, 240),
+        // 获取对应的棋子纹理
+        let texture = match piece.side {
+            Side::Black => self.black_stone.as_ref(),
+            Side::White => self.white_stone.as_ref(),
         };
 
-        painter.circle_filled(current_pos, self.piece_radius, color);
+        if let Some(texture) = texture {
+            // 图片按100%原大小显示，居中于当前动画位置
+            let image_size = Vec2::new(STONE_SIZE, STONE_SIZE);
+            let image_rect = Rect::from_center_size(current_pos, image_size);
+
+            // 绘制棋子图片
+            let image = Image::from_texture(texture.as_ref())
+                .fit_to_exact_size(image_size);
+
+            ui.put(image_rect, image);
+        } else {
+            // 如果图片加载失败，回退到代码绘制
+            let painter = ui.painter();
+            let color = match piece.side {
+                Side::Black => Color32::from_rgb(30, 30, 30),
+                Side::White => Color32::from_rgb(240, 240, 240),
+            };
+            painter.circle_filled(current_pos, self.piece_radius, color);
+        }
     }
 
     /// 绘制被吃棋子动画（缩小淡出）
     pub fn draw_capturing_piece(&self, ui: &mut Ui, piece: &Piece, progress: f32) {
-        let painter = ui.painter();
-
         let alpha = ((1.0 - progress) * 255.0) as u8;
-        let radius = self.piece_radius * (1.0 - progress);
+        let size = STONE_SIZE * (1.0 - progress);
+        let pos = self.board_to_screen(piece.position);
 
-        let color = match piece.side {
-            Side::Black => Color32::from_rgba_premultiplied(30, 30, 30, alpha),
-            Side::White => Color32::from_rgba_premultiplied(240, 240, 240, alpha),
+        // 获取对应的棋子纹理
+        let texture = match piece.side {
+            Side::Black => self.black_stone.as_ref(),
+            Side::White => self.white_stone.as_ref(),
         };
 
-        let pos = self.board_to_screen(piece.position);
-        painter.circle_filled(pos, radius, color);
+        if let Some(texture) = texture {
+            // 使用图片，应用透明度
+            let image_size = Vec2::new(size.max(1.0), size.max(1.0));
+            let image_rect = Rect::from_center_size(pos, image_size);
+
+            let tint = match piece.side {
+                Side::Black => Color32::from_rgba_premultiplied(255, 255, 255, alpha),
+                Side::White => Color32::from_rgba_premultiplied(255, 255, 255, alpha),
+            };
+
+            let image = Image::from_texture(texture.as_ref())
+                .fit_to_exact_size(image_size)
+                .tint(tint);
+
+            ui.put(image_rect, image);
+        } else {
+            // 如果图片加载失败，回退到代码绘制
+            let painter = ui.painter();
+            let radius = self.piece_radius * (1.0 - progress);
+            let color = match piece.side {
+                Side::Black => Color32::from_rgba_premultiplied(30, 30, 30, alpha),
+                Side::White => Color32::from_rgba_premultiplied(240, 240, 240, alpha),
+            };
+            painter.circle_filled(pos, radius, color);
+        }
     }
 
     /// 绘制带透明度的棋子（用于悔棋动画渐显效果）
     pub fn draw_piece_with_alpha(&self, ui: &mut Ui, piece: &Piece, pos: Pos2, alpha: u8) {
-        let painter = ui.painter();
-
-        let color = match piece.side {
-            Side::Black => Color32::from_rgba_premultiplied(30, 30, 30, alpha),
-            Side::White => Color32::from_rgba_premultiplied(240, 240, 240, alpha),
+        // 获取对应的棋子纹理
+        let texture = match piece.side {
+            Side::Black => self.black_stone.as_ref(),
+            Side::White => self.white_stone.as_ref(),
         };
 
-        let stroke_color = if alpha > 100 {
-            match piece.side {
-                Side::Black => Color32::from_rgba_premultiplied(80, 80, 80, alpha),
-                Side::White => Color32::from_rgba_premultiplied(180, 180, 180, alpha),
-            }
+        if let Some(texture) = texture {
+            // 使用图片，应用透明度
+            let image_size = Vec2::new(STONE_SIZE, STONE_SIZE);
+            let image_rect = Rect::from_center_size(pos, image_size);
+
+            let tint = Color32::from_rgba_premultiplied(255, 255, 255, alpha);
+
+            let image = Image::from_texture(texture.as_ref())
+                .fit_to_exact_size(image_size)
+                .tint(tint);
+
+            ui.put(image_rect, image);
         } else {
-            Color32::TRANSPARENT
-        };
+            // 如果图片加载失败，回退到代码绘制
+            let painter = ui.painter();
+            let color = match piece.side {
+                Side::Black => Color32::from_rgba_premultiplied(30, 30, 30, alpha),
+                Side::White => Color32::from_rgba_premultiplied(240, 240, 240, alpha),
+            };
 
-        // 绘制棋子本体
-        painter.circle_filled(pos, self.piece_radius, color);
+            let stroke_color = if alpha > 100 {
+                match piece.side {
+                    Side::Black => Color32::from_rgba_premultiplied(80, 80, 80, alpha),
+                    Side::White => Color32::from_rgba_premultiplied(180, 180, 180, alpha),
+                }
+            } else {
+                Color32::TRANSPARENT
+            };
 
-        // 绘制边框（当透明度足够时）
-        if alpha > 50 {
-            painter.circle_stroke(pos, self.piece_radius, Stroke::new(2.0, stroke_color));
+            // 绘制棋子本体
+            painter.circle_filled(pos, self.piece_radius, color);
+
+            // 绘制边框（当透明度足够时）
+            if alpha > 50 {
+                painter.circle_stroke(pos, self.piece_radius, Stroke::new(2.0, stroke_color));
+            }
         }
     }
 
