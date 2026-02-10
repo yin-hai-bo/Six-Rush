@@ -5,51 +5,104 @@ use egui::{Context, Window};
 
 use crate::game::state::GameResult;
 
+/// AI等级选择
+pub type AiLevel = u8;
+
+/// 新局对话框结果
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NewGameResult {
+    pub player_first: bool,
+    pub ai_level: AiLevel,
+}
+
 /// 新局对话框状态
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NewGameDialog {
     Closed,
-    Open,
+    Open { ai_level: AiLevel },
+}
+
+impl Default for NewGameDialog {
+    fn default() -> Self {
+        NewGameDialog::Open { ai_level: 3 }
+    }
 }
 
 impl NewGameDialog {
-    pub fn show(&mut self, ctx: &Context) -> Option<bool> {
-        if *self == NewGameDialog::Closed {
-            return None;
-        }
+    pub fn show(&mut self, ctx: &Context) -> Option<NewGameResult> {
+        match *self {
+            NewGameDialog::Closed => return None,
+            NewGameDialog::Open { ai_level } => {
+                let mut result = None;
+                let mut open = true;
+                let mut current_level = ai_level;
 
-        let mut result = None;
-        let mut open = true;
+                Window::new(t!("game.select_side"))
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .open(&mut open)
+                    .show(ctx, |ui| {
+                        ui.vertical_centered(|ui| {
+                            // AI等级选择
+                            ui.label(t!("game.ai_level"));
+                            ui.add_space(5.0);
+                            
+                            ui.horizontal(|ui| {
+                                ui.label(format!("{}:", t!("game.ai_level_label")));
+                                ui.add(egui::Slider::new(&mut current_level, 1..=5)
+                                    .text("")
+                                    .show_value(true));
+                            });
+                            
+                            // 显示当前等级名称
+                            let level_name = match current_level {
+                                1 => t!("game.ai_level_1"),
+                                2 => t!("game.ai_level_2"),
+                                3 => t!("game.ai_level_3"),
+                                4 => t!("game.ai_level_4"),
+                                5 => t!("game.ai_level_5"),
+                                _ => t!("game.ai_level_3"),
+                            };
+                            ui.label(format!("{}: {}", t!("game.ai_level_name"), level_name));
+                            ui.add_space(20.0);
 
-        Window::new(t!("game.select_side"))
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .open(&mut open)
-            .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.label(t!("game.select_side"));
-                    ui.add_space(20.0);
+                            // 先行/后行选择
+                            ui.label(t!("game.select_side_prompt"));
+                            ui.add_space(10.0);
 
-                    ui.horizontal(|ui| {
-                        if ui.button(format!("🌑 {}", t!("game.play_first"))).clicked() {
-                            result = Some(true); // 玩家先行
-                            *self = NewGameDialog::Closed;
-                        }
-                        ui.add_space(20.0);
-                        if ui.button(format!("☀️ {}", t!("game.play_second"))).clicked() {
-                            result = Some(false); // 玩家后行
-                            *self = NewGameDialog::Closed;
-                        }
+                            ui.horizontal(|ui| {
+                                if ui.button(format!("🌑 {}", t!("game.play_first"))).clicked() {
+                                    result = Some(NewGameResult {
+                                        player_first: true,
+                                        ai_level: current_level,
+                                    });
+                                    *self = NewGameDialog::Closed;
+                                }
+                                ui.add_space(20.0);
+                                if ui.button(format!("☀️ {}", t!("game.play_second"))).clicked() {
+                                    result = Some(NewGameResult {
+                                        player_first: false,
+                                        ai_level: current_level,
+                                    });
+                                    *self = NewGameDialog::Closed;
+                                }
+                            });
+                        });
                     });
-                });
-            });
 
-        if !open {
-            *self = NewGameDialog::Closed;
+                // 更新AI等级状态
+                if matches!(*self, NewGameDialog::Open { .. }) {
+                    *self = NewGameDialog::Open { ai_level: current_level };
+                }
+
+                if !open {
+                    *self = NewGameDialog::Closed;
+                }
+
+                result
+            }
         }
-
-        result
     }
 }
 

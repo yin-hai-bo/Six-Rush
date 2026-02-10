@@ -13,7 +13,7 @@ use crate::game::save::{is_initial_position, load_game, save_game};
 use crate::game::state::{DialogAction, GameEvent, GameResult, GameState};
 use crate::game::Game;
 use crate::ui::board_view::BoardView;
-use crate::ui::dialogs::{AboutDialog, GameOverAction, GameOverDialog, NewGameDialog, RulesDialog};
+use crate::ui::dialogs::{AboutDialog, GameOverAction, GameOverDialog, NewGameDialog, NewGameResult, RulesDialog};
 
 /// 动画常量
 const PIECE_MOVE_DURATION_MS: u64 = 300;
@@ -123,12 +123,12 @@ impl MainApp {
     pub fn new(_cc: &CreationContext<'_>) -> Self {
         let mut game = Game::new();
         // 自动开始新局，玩家执黑先行
-        let _ = game.handle_event(GameEvent::StartNewGame { player_first: true });
+        let _ = game.handle_event(GameEvent::StartNewGame { player_first: true, ai_level: game.ai_level });
 
         Self {
             game,
             board_view: None,
-            new_game_dialog: NewGameDialog::Closed,
+            new_game_dialog: NewGameDialog::default(),
             game_over_dialog: GameOverDialog::Closed,
             about_dialog: AboutDialog::Closed,
             rules_dialog: RulesDialog::Closed,
@@ -166,7 +166,7 @@ impl MainApp {
             ctx.input(|i| {
                 // F2: 新局, F3: 加载, F4: 保存, Ctrl+Z: 悔棋
                 if i.key_pressed(Key::F2) {
-                    self.new_game_dialog = NewGameDialog::Open;
+                    self.new_game_dialog = NewGameDialog::Open { ai_level: self.game.ai_level };
                 }
                 if i.key_pressed(Key::F3) {
                     self.handle_load_game();
@@ -188,7 +188,7 @@ impl MainApp {
                         let can_click = can_interact && !self.has_active_animation();
                         
                         if ui.add_enabled(can_click, egui::Button::new(t!("menu.new_game"))).clicked() {
-                            self.new_game_dialog = NewGameDialog::Open;
+                            self.new_game_dialog = NewGameDialog::Open { ai_level: self.game.ai_level };
                             ui.close_menu();
                         }
                         if ui.add_enabled(can_click, egui::Button::new(t!("menu.load_game"))).clicked() {
@@ -255,7 +255,7 @@ impl MainApp {
                 // 新局按钮
                 let new_game_text = if self.language == "zh-CN" { "🎮 新局" } else { "🎮 New" };
                 if ui.add_enabled(can_click, egui::Button::new(new_game_text).min_size(button_size)).clicked() {
-                    self.new_game_dialog = NewGameDialog::Open;
+                    self.new_game_dialog = NewGameDialog::Open { ai_level: self.game.ai_level };
                 }
 
                 // 保存按钮
@@ -313,8 +313,8 @@ impl MainApp {
 
     /// 处理新局对话框
     fn handle_new_game_dialog(&mut self, ctx: &Context) {
-        if let Some(player_first) = self.new_game_dialog.show(ctx) {
-            let _ = self.game.handle_event(GameEvent::StartNewGame { player_first });
+        if let Some(NewGameResult { player_first, ai_level }) = self.new_game_dialog.show(ctx) {
+            let _ = self.game.handle_event(GameEvent::StartNewGame { player_first, ai_level });
             self.animations = AnimationController::default();
             self.ai_think_start = None;
         }
@@ -329,7 +329,7 @@ impl MainApp {
                     self.game_over_dialog = GameOverDialog::Closed;
                 }
                 GameOverAction::NewGame => {
-                    self.new_game_dialog = NewGameDialog::Open;
+                    self.new_game_dialog = NewGameDialog::Open { ai_level: self.game.ai_level };
                 }
                 GameOverAction::BackToMenu => {
                     let _ = self.game.handle_event(GameEvent::DialogAction(DialogAction::Confirm));
@@ -847,9 +847,9 @@ impl MainApp {
             GameState::NewGame => {
                 // 新局开始后自动流转到下一状态
                 if self.game.player_side == self.game.current_turn {
-                    let _ = self.game.handle_event(GameEvent::StartNewGame { player_first: true });
+                    let _ = self.game.handle_event(GameEvent::StartNewGame { player_first: true, ai_level: self.game.ai_level });
                 } else {
-                    let _ = self.game.handle_event(GameEvent::StartNewGame { player_first: false });
+                    let _ = self.game.handle_event(GameEvent::StartNewGame { player_first: false, ai_level: self.game.ai_level });
                 }
             }
             GameState::UndoAnimating if self.animations.undo.is_none() => {

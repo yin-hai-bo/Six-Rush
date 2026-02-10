@@ -131,7 +131,7 @@ pub enum AnimationType {
 #[derive(Debug, Clone)]
 pub enum GameEvent {
     /// 开始新局
-    StartNewGame { player_first: bool },
+    StartNewGame { player_first: bool, ai_level: u8 },
     /// AI思考完成，选定落点
     AiMoveSelected { from: (u8, u8), to: (u8, u8) },
     /// 玩家选中棋子（左键点击）

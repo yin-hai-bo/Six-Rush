@@ -106,8 +106,8 @@ impl Game {
     pub fn handle_event(&mut self, event: GameEvent) -> Result<()> {
         match (&self.state, event) {
             // ===== 新局开始 =====
-            (GameState::NewGame, GameEvent::StartNewGame { player_first }) => {
-                self.start_new_game(player_first);
+            (GameState::NewGame, GameEvent::StartNewGame { player_first, ai_level }) => {
+                self.start_new_game(player_first, ai_level);
             }
             
             // 电脑先行 -> 进入电脑思考中
@@ -232,7 +232,7 @@ impl Game {
                     DialogAction::Confirm => {
                         // 确定结束，保持相同先行方开启新局
                         let player_first = self.player_side == Side::Black;
-                        self.start_new_game(player_first);
+                        self.start_new_game(player_first, self.ai_level);
                     }
                 }
             }
@@ -261,7 +261,7 @@ impl Game {
     }
     
     /// 开始新局
-    fn start_new_game(&mut self, player_first: bool) {
+    fn start_new_game(&mut self, player_first: bool, ai_level: u8) {
         self.board = Board::initial();
         self.player_side = if player_first { Side::Black } else { Side::White };
         self.current_turn = Side::Black; // 黑方先行
@@ -270,6 +270,7 @@ impl Game {
         self.pending_move = None;
         self.last_captured.clear();
         self.last_result = None;
+        self.ai_level = ai_level.clamp(1, 5);
         
         // 根据先行方设置初始状态
         if player_first {
