@@ -52,18 +52,6 @@ pub struct MainApp {
     confirm_overwrite: bool,
     /// AI思考开始时间（用于确保最小思考时间）
     ai_think_start: Option<Instant>,
-    /// 临时存储的拖拽信息（用于避免借用冲突）
-    drag_info: Option<DragInfo>,
-}
-
-/// 拖拽信息（从DragState复制，避免借用问题）
-#[derive(Debug, Clone, Copy)]
-struct DragInfo {
-    piece_id: u8,
-    start_pos: (u8, u8),
-    current_mouse_pos: (f32, f32),
-    /// 是否移动过（用于区分初始吸附状态和待点击目标点状态）
-    has_moved: bool,
 }
 
 /// 动画控制器
@@ -71,8 +59,6 @@ struct DragInfo {
 struct AnimationController {
     /// 棋子移动动画
     piece_move: Option<PieceMoveAnimation>,
-    /// 棋子放回原位动画
-    piece_return: Option<PieceReturnAnimation>,
     /// 吃子动画
     capture: Option<CaptureAnimation>,
     /// 悔棋动画
@@ -89,16 +75,6 @@ struct PieceMoveAnimation {
     start_time: Instant,
     duration_ms: u64,
     is_ai: bool,
-}
-
-/// 棋子放回原位动画
-#[derive(Debug, Clone)]
-struct PieceReturnAnimation {
-    piece_id: u8,
-    from: egui::Pos2,
-    to: egui::Pos2,
-    start_time: Instant,
-    duration_ms: u64,
 }
 
 /// 吃子动画
@@ -163,7 +139,7 @@ impl MainApp {
             pending_save_file: None,
             confirm_overwrite: false,
             ai_think_start: None,
-            drag_info: None,
+
         }
     }
 
@@ -176,7 +152,6 @@ impl MainApp {
     /// 检查是否有动画正在进行
     fn has_active_animation(&self) -> bool {
         self.animations.piece_move.is_some()
-            || self.animations.piece_return.is_some()
             || self.animations.capture.is_some()
             || self.animations.undo.is_some()
     }
@@ -425,7 +400,7 @@ impl MainApp {
                 self.game.current_turn = Side::Black;
                 self.game.state = GameState::WaitingForPlayer;
                 self.game.move_history.clear();
-                self.game.drag_state = None;
+                self.game.selected_piece = None;
                 self.game.pending_move = None;
                 self.game.last_captured.clear();
                 self.game.last_result = None;
@@ -631,39 +606,28 @@ impl MainApp {
     }
 
     /// 处理玩家输入
-    fn handle_player_input(&mut self, ctx: &Context, response: &egui::Response) {
+    fn handle_player_input(&mut self, _ctx: &Context, response: &egui::Response) {
         // 根据当前状态处理不同的输入
         match self.game.state {
             GameState::WaitingForPlayer => {
-                self.handle_waiting_input(ctx, response);
+                self.handle_waiting_input(response);
             }
             GameState::PieceSelected => {
-                self.handle_piece_selected_input(ctx, response);
-            }
-            GameState::PieceDragging => {
-                self.handle_dragging_input(ctx, response);
-            }
-            GameState::WaitingForTargetClick => {
-                self.handle_waiting_target_input(response);
+                self.handle_piece_selected_input(response);
             }
             _ => {}
         }
     }
 
     /// 处理等待玩家行棋状态（初始状态）的输入
-    fn handle_waiting_input(&mut self, ctx: &egui::Context, response: &egui::Response) {
+    fn handle_waiting_input(&mut self, response: &egui::Response) {
         let view = match self.board_view {
             Some(ref v) => v.clone(),
             None => return,
         };
 
-        // 处理鼠标左键按下（立即进入棋子吸附状态）
-        let pointer_down = ctx.input(|i| {
-            i.pointer.button_down(egui::PointerButton::Primary) && 
-            i.pointer.button_pressed(egui::PointerButton::Primary)
-        });
-        
-        if pointer_down {
+        // 处理鼠标左键点击（选中棋子）
+        if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(pos) = response.interact_pointer_pos() {
                 // 查找点击的己方棋子
                 let clicked_piece = self.game.board.active_pieces_of(self.game.player_side)
@@ -674,15 +638,8 @@ impl MainApp {
                     // 检查棋子是否可以移动
                     if self.can_piece_move(piece.id) {
                         self.sound.click();
-                        // 保存拖拽信息到临时存储
-                        self.drag_info = Some(DragInfo {
-                            piece_id: piece.id,
-                            start_pos: piece.position,
-                            current_mouse_pos: (pos.x, pos.y),
-                            has_moved: false, // 标记是否移动过
-                        });
-                        // 发送事件进入初始吸附状态
-                        let _ = self.game.handle_event(GameEvent::PlayerStartDrag {
+                        // 发送事件进入棋子选中状态
+                        let _ = self.game.handle_event(GameEvent::PlayerSelectPiece {
                             piece_id: piece.id,
                             start_pos: piece.position,
                         });
@@ -692,117 +649,44 @@ impl MainApp {
         }
     }
     
-    /// 处理初始吸附状态的输入
-    fn handle_piece_selected_input(&mut self, ctx: &egui::Context, response: &egui::Response) {
+    /// 处理棋子已选中状态的输入
+    fn handle_piece_selected_input(&mut self, response: &egui::Response) {
         let view = match self.board_view {
             Some(ref v) => v.clone(),
             None => return,
         };
 
-        // 更新吸附位置（棋子跟随鼠标）
-        if let Some(ref mut drag_info) = self.drag_info {
-            if let Some(pos) = response.hover_pos() {
-                // 限制在棋盘范围内
-                let clamped_pos = egui::Pos2::new(
-                    pos.x.clamp(view.rect.min.x, view.rect.max.x),
-                    pos.y.clamp(view.rect.min.y, view.rect.max.y),
-                );
-                
-                // 检查是否移动了（超过一定阈值）
-                let start_pos = egui::Pos2::new(drag_info.current_mouse_pos.0, drag_info.current_mouse_pos.1);
-                let dist = (clamped_pos - start_pos).length();
-                if dist > 5.0 { // 5像素阈值
-                    drag_info.has_moved = true;
-                }
-                
-                drag_info.current_mouse_pos = (clamped_pos.x, clamped_pos.y);
-                
-                // 同步更新游戏状态中的拖拽位置
-                if let Some(ref mut drag) = self.game.drag_state {
-                    drag.current_mouse_pos = (clamped_pos.x, clamped_pos.y);
-                }
-                
-                // 如果移动超过阈值，进入拖拽状态
-                if drag_info.has_moved {
-                    let _ = self.game.handle_event(GameEvent::PlayerStartMoving);
-                }
-            }
-        }
-
-        // 处理左键松开（未移动），进入待点击目标点状态
-        let pointer_released = ctx.input(|i| {
-            !i.pointer.button_down(egui::PointerButton::Primary) && 
-            i.pointer.button_released(egui::PointerButton::Primary)
-        });
-        
-        if pointer_released {
-            if let Some(ref drag_info) = self.drag_info {
-                if !drag_info.has_moved {
-                    // 未移动，进入待点击目标点状态
-                    let _ = self.game.handle_event(GameEvent::PlayerReleaseWithoutMove);
-                }
-                // 如果移动了，由上面的逻辑已经转入拖拽状态，不需要处理
-            }
-        }
-
         // 处理右键取消，返回初始状态
         if response.clicked_by(egui::PointerButton::Secondary) {
-            if let Some(_) = self.drag_info.take() {
-                let _ = self.game.handle_event(GameEvent::PlayerCancel);
-            }
-        }
-    }
-
-    /// 处理拖拽状态的输入
-    fn handle_dragging_input(&mut self, ctx: &egui::Context, response: &egui::Response) {
-        let view = match self.board_view {
-            Some(ref v) => v.clone(),
-            None => return,
-        };
-
-        // 更新拖拽位置（棋子跟随鼠标）
-        if let Some(ref mut drag_info) = self.drag_info {
-            if let Some(pos) = response.hover_pos() {
-                let clamped_pos = egui::Pos2::new(
-                    pos.x.clamp(view.rect.min.x, view.rect.max.x),
-                    pos.y.clamp(view.rect.min.y, view.rect.max.y),
-                );
-                drag_info.current_mouse_pos = (clamped_pos.x, clamped_pos.y);
-                
-                if let Some(ref mut drag) = self.game.drag_state {
-                    drag.current_mouse_pos = (clamped_pos.x, clamped_pos.y);
-                }
-            }
-        }
-
-        // 处理右键取消，返回初始状态
-        if response.clicked_by(egui::PointerButton::Secondary) {
-            if let Some(_) = self.drag_info.take() {
-                let _ = self.game.handle_event(GameEvent::PlayerCancel);
-            }
+            let _ = self.game.handle_event(GameEvent::PlayerCancel);
             return;
         }
 
-        // 处理左键松开，尝试落子
-        let pointer_released = ctx.input(|i| {
-            !i.pointer.button_down(egui::PointerButton::Primary) && 
-            i.pointer.button_released(egui::PointerButton::Primary)
-        });
-        
-        if pointer_released {
-            if let Some(drag_info) = self.drag_info.take() {
-                let current_pos = egui::Pos2::new(drag_info.current_mouse_pos.0, drag_info.current_mouse_pos.1);
-                
-                if let Some(target_pos) = view.screen_to_board(current_pos, 0.4) {
-                    if self.is_valid_move_for_piece(drag_info.piece_id, target_pos) {
-                        let _ = self.game.handle_event(GameEvent::PlayerDrop { target_pos });
+        // 处理左键点击
+        if response.clicked_by(egui::PointerButton::Primary) {
+            if let Some(pos) = response.interact_pointer_pos() {
+                // 获取当前选中的棋子信息
+                let selected = match self.game.selected_piece {
+                    Some(s) => s,
+                    None => {
+                        // 没有选中棋子，返回初始状态
+                        let _ = self.game.handle_event(GameEvent::PlayerCancel);
+                        return;
+                    }
+                };
+
+                // 检查是否点击了合法目标点
+                if let Some(target_pos) = view.screen_to_board(pos, 0.4) {
+                    if self.is_valid_move_for_piece(selected.piece_id, target_pos) {
+                        let _ = self.game.handle_event(GameEvent::PlayerClickTarget { target_pos });
                         
                         if matches!(self.game.state, GameState::PieceMoving) {
                             let to_pos = view.board_to_screen(target_pos);
+                            let from_pos = view.board_to_screen(selected.start_pos);
                             
                             self.animations.piece_move = Some(PieceMoveAnimation {
-                                piece_id: drag_info.piece_id,
-                                from: current_pos,
+                                piece_id: selected.piece_id,
+                                from: from_pos,
                                 to: to_pos,
                                 start_time: Instant::now(),
                                 duration_ms: PIECE_MOVE_DURATION_MS,
@@ -811,63 +695,12 @@ impl MainApp {
                             
                             self.sound.place();
                         }
-                    } else {
-                        let _ = self.game.handle_event(GameEvent::PlayerCancel);
-                    }
-                } else {
-                    let _ = self.game.handle_event(GameEvent::PlayerCancel);
-                }
-            }
-        }
-    }
-    
-    /// 处理待点击目标点状态的输入
-    fn handle_waiting_target_input(&mut self, response: &egui::Response) {
-        let view = match self.board_view {
-            Some(ref v) => v.clone(),
-            None => return,
-        };
-
-        // 处理右键取消，返回初始状态
-        if response.clicked_by(egui::PointerButton::Secondary) {
-            if let Some(_) = self.drag_info.take() {
-                let _ = self.game.handle_event(GameEvent::PlayerCancel);
-            }
-            return;
-        }
-
-        // 处理左键点击
-        if response.clicked_by(egui::PointerButton::Primary) {
-            if let Some(pos) = response.interact_pointer_pos() {
-                if let Some(target_pos) = view.screen_to_board(pos, 0.4) {
-                    if let Some(ref drag_info) = self.drag_info {
-                        if self.is_valid_move_for_piece(drag_info.piece_id, target_pos) {
-                            let _ = self.game.handle_event(GameEvent::PlayerClickTarget { target_pos });
-                            
-                            if matches!(self.game.state, GameState::PieceMoving) {
-                                let to_pos = view.board_to_screen(target_pos);
-                                let from_pos = view.board_to_screen(drag_info.start_pos);
-                                
-                                self.animations.piece_move = Some(PieceMoveAnimation {
-                                    piece_id: drag_info.piece_id,
-                                    from: from_pos,
-                                    to: to_pos,
-                                    start_time: Instant::now(),
-                                    duration_ms: PIECE_MOVE_DURATION_MS,
-                                    is_ai: false,
-                                });
-                                
-                                self.sound.place();
-                            }
-                            self.drag_info = None;
-                            return;
-                        }
+                        return;
                     }
                 }
                 
-                if let Some(_) = self.drag_info.take() {
-                    let _ = self.game.handle_event(GameEvent::PlayerClickInvalid);
-                }
+                // 点击了非目标点，返回初始状态
+                let _ = self.game.handle_event(GameEvent::PlayerClickInvalid);
             }
         }
     }
@@ -951,15 +784,6 @@ impl MainApp {
                 }
                 
                 self.animations.piece_move = None;
-            }
-        }
-
-        // 更新棋子放回原位动画
-        if let Some(ref anim) = self.animations.piece_return {
-            let elapsed = anim.start_time.elapsed().as_millis() as u64;
-            if elapsed >= anim.duration_ms {
-                let _ = self.game.handle_event(GameEvent::PieceReturnAnimationComplete);
-                self.animations.piece_return = None;
             }
         }
 
@@ -1082,30 +906,14 @@ impl MainApp {
         // 绘制棋盘
         let response = view.draw_board(ui);
 
-        // 在初始吸附状态或待点击目标点状态下，绘制高亮和合法目标点
-        let is_selected_or_waiting = matches!(
-            self.game.state,
-            GameState::PieceSelected | GameState::WaitingForTargetClick
-        );
-        
-        if is_selected_or_waiting {
-            if let Some(ref drag) = self.game.drag_state {
-                // 高亮原始位置
-                view.draw_origin_highlight(ui, drag.start_pos);
+        // 在棋子已选中状态下，绘制高亮和合法目标点
+        if let GameState::PieceSelected = self.game.state {
+            if let Some(ref selected) = self.game.selected_piece {
+                // 高亮选中的棋子位置
+                view.draw_selected_piece_highlight(ui, selected.start_pos);
                 
                 // 计算并绘制合法目标点
-                let valid_moves = self.get_valid_moves_for_piece(drag.piece_id);
-                view.draw_valid_move_hints(ui, &valid_moves);
-            }
-        }
-
-        // 在拖拽状态下，绘制原始位置标记和合法目标点
-        if let GameState::PieceDragging = self.game.state {
-            if let Some(ref drag) = self.game.drag_state {
-                view.draw_origin_marker(ui, drag.start_pos);
-                
-                // 计算并绘制合法目标点
-                let valid_moves = self.get_valid_moves_for_piece(drag.piece_id);
+                let valid_moves = self.get_valid_moves_for_piece(selected.piece_id);
                 view.draw_valid_move_hints(ui, &valid_moves);
             }
         }
@@ -1123,19 +931,11 @@ impl MainApp {
                 continue;
             }
 
-            // 检查是否是正在拖拽或吸附的棋子
-            let is_dragging = matches!(self.game.state, GameState::PieceDragging)
-                && self.game.drag_state.as_ref().map(|d| d.piece_id) == Some(piece.id);
-            
+            // 检查是否是选中的棋子（高亮显示）
             let is_selected = matches!(self.game.state, GameState::PieceSelected)
-                && self.game.drag_state.as_ref().map(|d| d.piece_id) == Some(piece.id);
+                && self.game.selected_piece.as_ref().map(|s| s.piece_id) == Some(piece.id);
 
-            if is_dragging || is_selected {
-                if let Some(ref drag) = self.game.drag_state {
-                    let pos = egui::Pos2::new(drag.current_mouse_pos.0, drag.current_mouse_pos.1);
-                    view.draw_dragging_piece(ui, piece, pos);
-                }
-            } else if let Some(ref anim) = self.animations.piece_move {
+            if let Some(ref anim) = self.animations.piece_move {
                 // 移动动画中
                 if anim.piece_id == piece.id {
                     let elapsed = anim.start_time.elapsed().as_millis() as f64;
@@ -1149,29 +949,13 @@ impl MainApp {
 
                     view.draw_animated_piece(ui, piece, current_pos);
                 } else {
-                    view.draw_piece(ui, piece, false, None);
-                }
-            } else if let Some(ref anim) = self.animations.piece_return {
-                // 放回原位动画中
-                if anim.piece_id == piece.id {
-                    let elapsed = anim.start_time.elapsed().as_millis() as f64;
-                    let progress = (elapsed / anim.duration_ms as f64).min(1.0);
-                    let t = crate::utils::ease_out_bounce(progress as f32);
-
-                    let current_pos = egui::Pos2::new(
-                        crate::utils::lerp(anim.from.x, anim.to.x, t),
-                        crate::utils::lerp(anim.from.y, anim.to.y, t),
-                    );
-
-                    view.draw_animated_piece(ui, piece, current_pos);
-                } else {
-                    view.draw_piece(ui, piece, false, None);
+                    view.draw_piece(ui, piece, is_selected);
                 }
             } else if let Some(ref undo) = self.animations.undo {
                 // 悔棋动画中
                 self.render_undo_animation_piece(ui, &view, piece, undo);
             } else {
-                view.draw_piece(ui, piece, false, None);
+                view.draw_piece(ui, piece, is_selected);
             }
         }
 
@@ -1230,7 +1014,7 @@ impl MainApp {
                     }
                 }
                 UndoStep::PlayerUndoing => {
-                    view.draw_piece(ui, piece, false, None);
+                    view.draw_piece(ui, piece, false);
                 }
             }
         } else if is_player_piece && matches!(undo.step, UndoStep::PlayerUndoing) {
@@ -1246,7 +1030,7 @@ impl MainApp {
 
             view.draw_animated_piece(ui, piece, current_pos);
         } else {
-            view.draw_piece(ui, piece, false, None);
+            view.draw_piece(ui, piece, false);
         }
     }
 
@@ -1266,7 +1050,7 @@ impl MainApp {
                     if visible {
                         for &piece_id in &anim.piece_ids {
                             if let Some(piece) = self.game.board.piece_by_id(piece_id) {
-                                view.draw_piece(ui, piece, false, None);
+                                view.draw_piece(ui, piece, false);
                             }
                         }
                     }

@@ -147,12 +147,24 @@ impl BoardView {
     }
 
     /// 渲染单个棋子（使用图片，100%原大小显示）
-    pub fn draw_piece(&self, ui: &mut Ui, piece: &Piece, is_dragging: bool, drag_pos: Option<Pos2>) {
-        let pos = if is_dragging {
-            drag_pos.unwrap_or_else(|| self.board_to_screen(piece.position))
-        } else {
-            self.board_to_screen(piece.position)
-        };
+    /// 
+    /// # Arguments
+    /// * `ui` - egui UI
+    /// * `piece` - 要绘制的棋子
+    /// * `is_selected` - 是否被选中（选中时添加高亮效果）
+    pub fn draw_piece(&self, ui: &mut Ui, piece: &Piece, is_selected: bool) {
+        let pos = self.board_to_screen(piece.position);
+
+        // 如果被选中，在棋子周围绘制高亮环
+        if is_selected {
+            let painter = ui.painter();
+            let highlight_radius = self.piece_radius * 1.25;
+            painter.circle_stroke(
+                pos,
+                highlight_radius,
+                Stroke::new(4.0, Color32::from_rgba_unmultiplied(0, 160, 0, 180)),
+            );
+        }
 
         // 获取对应的棋子纹理
         let texture = match piece.side {
@@ -165,6 +177,7 @@ impl BoardView {
             let image_size = Vec2::new(STONE_SIZE, STONE_SIZE);
             let image_rect = Rect::from_center_size(pos, image_size);
 
+            // 绘制棋子图片
             let image = Image::from_texture(texture.as_ref())
                 .fit_to_exact_size(image_size);
 
@@ -245,50 +258,6 @@ impl BoardView {
         dist <= self.piece_radius
     }
 
-    /// 绘制拖拽中的棋子（使用图片，半透明效果）
-    pub fn draw_dragging_piece(&self, ui: &mut Ui, piece: &Piece, mouse_pos: Pos2) {
-        // 获取对应的棋子纹理
-        let texture = match piece.side {
-            Side::Black => self.black_stone.as_ref(),
-            Side::White => self.white_stone.as_ref(),
-        };
-
-        if let Some(texture) = texture {
-            // 图片按100%原大小显示，居中于鼠标位置
-            let image_size = Vec2::new(STONE_SIZE, STONE_SIZE);
-            let image_rect = Rect::from_center_size(mouse_pos, image_size);
-
-            // 使用半透明色调绘制
-            let tint = match piece.side {
-                Side::Black => Color32::from_rgba_premultiplied(255, 255, 255, 200),
-                Side::White => Color32::from_rgba_premultiplied(255, 255, 255, 200),
-            };
-
-            let image = Image::from_texture(texture.as_ref())
-                .fit_to_exact_size(image_size)
-                .tint(tint);
-
-            ui.put(image_rect, image);
-        } else {
-            // 如果图片加载失败，回退到代码绘制
-            let painter = ui.painter();
-            let color = match piece.side {
-                Side::Black => Color32::from_rgba_premultiplied(30, 30, 30, 180),
-                Side::White => Color32::from_rgba_premultiplied(240, 240, 240, 180),
-            };
-            painter.circle_filled(mouse_pos, self.piece_radius, color);
-        }
-
-        // 绘制原位置虚线提示
-        let original_pos = self.board_to_screen(piece.position);
-        let painter = ui.painter();
-        painter.circle_stroke(
-            original_pos,
-            self.piece_radius,
-            Stroke::new(2.0, Color32::from_rgba_premultiplied(128, 128, 128, 128)),
-        );
-    }
-
     /// 绘制动画中的棋子
     pub fn draw_animated_piece(&self, ui: &mut Ui, piece: &Piece, current_pos: Pos2) {
         let painter = ui.painter();
@@ -357,51 +326,26 @@ impl BoardView {
         );
     }
 
-    /// 绘制原始位置标记（棋子被吸附时显示）
-    pub fn draw_origin_marker(&self, ui: &mut Ui, pos: (u8, u8)) {
+    /// 绘制选中棋子的高亮效果
+    pub fn draw_selected_piece_highlight(&self, ui: &mut Ui, pos: (u8, u8)) {
         let painter = ui.painter();
         let screen_pos = self.board_to_screen(pos);
 
-        // 绘制虚线圆圈表示原始位置
-        let stroke = Stroke::new(
-            2.0,
-            Color32::from_rgba_premultiplied(100, 100, 100, 150),
-        );
-
-        // 绘制虚线圆
-        let segments = 12;
-        for i in 0..segments {
-            if i % 2 == 0 {
-                let angle1 = (i as f32 / segments as f32) * std::f32::consts::TAU;
-                let angle2 = ((i + 1) as f32 / segments as f32) * std::f32::consts::TAU;
-
-                let p1 = screen_pos + Vec2::new(angle1.cos(), angle1.sin()) * self.piece_radius * 1.1;
-                let p2 = screen_pos + Vec2::new(angle2.cos(), angle2.sin()) * self.piece_radius * 1.1;
-
-                painter.line_segment([p1, p2], stroke);
-            }
-        }
-
-        // 绘制中心小点
-        painter.circle_filled(
-            screen_pos,
-            self.piece_radius * 0.15,
-            Color32::from_rgba_premultiplied(150, 150, 150, 200),
-        );
-    }
-
-    /// 绘制高亮原始位置（用于初始吸附状态和待点击目标点状态）
-    pub fn draw_origin_highlight(&self, ui: &mut Ui, pos: (u8, u8)) {
-        let painter = ui.painter();
-        let screen_pos = self.board_to_screen(pos);
-
-        let ring_outer_radius = self.piece_radius * 1.1;
-        let ring_color = Color32::from_rgba_premultiplied(64, 64, 64, 32);
+        // 绘制外圈光晕效果
+        let ring_outer_radius = self.piece_radius * 1.3;
+        let ring_color = Color32::from_rgba_unmultiplied(64, 64, 64, 32); // 灰色半透明光晕
         painter.circle_filled(screen_pos, ring_outer_radius, ring_color);
+
+        // 绘制边框
+        painter.circle_stroke(
+            screen_pos,
+            self.piece_radius * 1.2,
+            Stroke::new(3.0, Color32::from_rgba_unmultiplied(64, 64, 64, 64)), // 灰色边框
+        );
     }
 
     /// 绘制合法目标点标注
-    /// 使用50%透明度的绿色
+    /// 使用醒目的绿色标注合法目标点
     pub fn draw_valid_move_hints(&self, ui: &mut Ui, valid_moves: &[(u8, u8)]) {
         let painter = ui.painter();
 
@@ -411,15 +355,15 @@ impl BoardView {
             // 绘制绿色圆点表示合法目标点
             painter.circle_filled(
                 screen_pos,
-                self.cell_size * 0.15, // 小圆点
-                Color32::from_rgba_premultiplied(0, 32, 0, 16),
+                self.cell_size * 0.18, // 稍大的圆点
+                Color32::from_rgba_unmultiplied(0, 32, 0, 16), // 透明绿色圆点
             );
 
-            // 绘制外圈（50% Alpha）
+            // 绘制外圈
             painter.circle_stroke(
                 screen_pos,
-                self.cell_size * 0.2,
-                Stroke::new(2.0, Color32::from_rgba_premultiplied(0, 32, 0, 16)),
+                self.cell_size * 0.25,
+                Stroke::new(2.0, Color32::from_rgba_unmultiplied(0, 32, 0, 32)), // 透明绿色外圈
             );
         }
     }

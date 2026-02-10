@@ -10,7 +10,7 @@ pub mod state;
 
 use crate::game::board::Board;
 use crate::game::piece::Side;
-use crate::game::rules::{is_valid_move, check_game_end, calculate_captures};
+use crate::game::rules::{check_game_end, calculate_captures};
 use crate::game::state::GameEvent;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -56,9 +56,9 @@ pub struct Game {
     pub move_history: Vec<MoveRecord>,
     /// AI难度等级 (1-5)
     pub ai_level: u8,
-    /// 当前拖拽状态（仅在PieceDragging状态下有效）
+    /// 当前选中的棋子（仅在PieceSelected状态下有效）
     #[serde(skip)]
-    pub drag_state: Option<state::DragState>,
+    pub selected_piece: Option<SelectedPiece>,
     /// 当前正在移动的棋子动画信息
     #[serde(skip)]
     pub pending_move: Option<PendingMove>,
@@ -86,7 +86,7 @@ impl Default for Game {
             current_turn: Side::Black,
             move_history: Vec::new(),
             ai_level: 3,
-            drag_state: None,
+            selected_piece: None,
             pending_move: None,
             last_captured: Vec::new(),
             last_result: None,
@@ -121,15 +121,14 @@ impl Game {
             }
             
             // ===== 等待玩家行棋（初始状态）=====
-            (GameState::WaitingForPlayer, GameEvent::PlayerStartDrag { piece_id, start_pos }) => {
+            (GameState::WaitingForPlayer, GameEvent::PlayerSelectPiece { piece_id, start_pos }) => {
                 // 检查是否是己方棋子且有可移动位置
                 if self.can_piece_move(piece_id) {
-                    self.drag_state = Some(state::DragState {
+                    self.selected_piece = Some(SelectedPiece {
                         piece_id,
                         start_pos,
-                        current_mouse_pos: (0.0, 0.0),
                     });
-                    // 进入初始吸附状态
+                    // 进入棋子已选中状态
                     self.state = GameState::PieceSelected;
                 }
             }
@@ -140,79 +139,24 @@ impl Game {
                 }
             }
             
-            // ===== 初始吸附状态 =====
-            // 玩家移动鼠标，进入拖拽状态
-            (GameState::PieceSelected, GameEvent::PlayerStartMoving) => {
-                self.state = GameState::PieceDragging;
-            }
-            
-            // 玩家松开左键（未移动），进入待点击目标点状态
-            (GameState::PieceSelected, GameEvent::PlayerReleaseWithoutMove) => {
-                self.state = GameState::WaitingForTargetClick;
-            }
-            
-            // 玩家点击右键，返回初始状态
-            (GameState::PieceSelected, GameEvent::PlayerCancel) => {
-                self.drag_state = None;
-                self.state = GameState::WaitingForPlayer;
-            }
-            
-            // ===== 拖拽状态 =====
-            (GameState::PieceDragging, GameEvent::PlayerDrop { target_pos }) => {
-                if let Some(drag) = self.drag_state {
-                    // 检查落点是否合法
-                    if is_valid_move(&self.board, drag.start_pos, target_pos, self.player_side) {
-                        // 如果落点与起始位置相同，直接回到等待状态
-                        if drag.start_pos == target_pos {
-                            self.drag_state = None;
-                            self.state = GameState::WaitingForPlayer;
-                        } else {
-                            // 执行移动
-                            self.pending_move = Some(PendingMove {
-                                from: drag.start_pos,
-                                to: target_pos,
-                                is_ai: false,
-                            });
-                            self.state = GameState::PieceMoving;
-                            self.drag_state = None;
-                        }
-                    } else {
-                        // 非法落点，进入放回动画
-                        self.state = GameState::PieceReturning;
-                        self.drag_state = None;
-                    }
-                }
-            }
-            
-            (GameState::PieceDragging, GameEvent::PlayerCancel) => {
-                // 右键取消，进入放回动画
-                self.state = GameState::PieceReturning;
-                self.drag_state = None;
-            }
-            
-            // ===== 待点击目标点状态 =====
-            (GameState::WaitingForTargetClick, GameEvent::PlayerClickTarget { target_pos }) => {
-                if let Some(drag) = self.drag_state {
+            // ===== 棋子已选中状态 =====
+            (GameState::PieceSelected, GameEvent::PlayerClickTarget { target_pos }) => {
+                if let Some(selected) = self.selected_piece {
                     // 执行移动
                     self.pending_move = Some(PendingMove {
-                        from: drag.start_pos,
+                        from: selected.start_pos,
                         to: target_pos,
                         is_ai: false,
                     });
                     self.state = GameState::PieceMoving;
-                    self.drag_state = None;
+                    self.selected_piece = None;
                 }
             }
             
-            // 点击了非目标点，返回初始状态
-            (GameState::WaitingForTargetClick, GameEvent::PlayerClickInvalid) => {
-                self.drag_state = None;
-                self.state = GameState::WaitingForPlayer;
-            }
-            
-            // 点击右键，返回初始状态
-            (GameState::WaitingForTargetClick, GameEvent::PlayerCancel) => {
-                self.drag_state = None;
+            // 点击了非目标点或右键，返回初始状态
+            (GameState::PieceSelected, GameEvent::PlayerClickInvalid) |
+            (GameState::PieceSelected, GameEvent::PlayerCancel) => {
+                self.selected_piece = None;
                 self.state = GameState::WaitingForPlayer;
             }
             
@@ -234,11 +178,7 @@ impl Game {
                 }
             }
             
-            // ===== 棋子放回原位动画 =====
-            (GameState::PieceReturning, GameEvent::PieceReturnAnimationComplete) => {
-                self.state = GameState::WaitingForPlayer;
-            }
-            
+
             // ===== 判断吃子 =====
             (GameState::CheckingCapture, GameEvent::CaptureCheckComplete { has_capture, .. }) => {
                 if has_capture {
@@ -326,7 +266,7 @@ impl Game {
         self.player_side = if player_first { Side::Black } else { Side::White };
         self.current_turn = Side::Black; // 黑方先行
         self.move_history.clear();
-        self.drag_state = None;
+        self.selected_piece = None;
         self.pending_move = None;
         self.last_captured.clear();
         self.last_result = None;
@@ -461,4 +401,4 @@ impl Game {
 }
 
 // 重新导出状态相关的类型
-pub use state::{AnimationType, DialogAction, DragState, GameResult, GameState, MoveResult};
+pub use state::{AnimationType, DialogAction, GameResult, GameState, MoveResult, SelectedPiece};
